@@ -7,6 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddServerSideBlazor();
+builder.Services.AddRazorPages();
 // builder.Services.AddEndpointsApiExplorer();
 // builder.Services.AddSwaggerGen();
 
@@ -43,9 +45,11 @@ if (app.Environment.IsDevelopment())
 //     app.UseSwaggerUI();
 }
 
+app.UseStaticFiles();
 app.UseCors("AllowReactApp");
-app.UseHttpsRedirection();
 app.UseAuthorization();
+app.MapBlazorHub();
+app.MapFallbackToPage("/_Host");
 app.MapControllers();
 
 // Seed initial data
