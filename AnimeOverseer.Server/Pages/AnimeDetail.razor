@@ -1,0 +1,192 @@
+@page "/anime/{id:int}"
+@using AnimeOverseer.Server.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject IHttpClientFactory Http
+@inject NavigationManager NavManager
+
+<PageTitle>@(anime?.Title ?? "Loading...") - AnimeOverseer</PageTitle>
+
+<div class="detail-page">
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading anime details...</p>
+        </div>
+    }
+    else if (anime != null)
+    {
+        <button class="btn btn-back" @onclick="goBack">
+            <span>&#x2190;</span> Back to Dashboard
+        </button>
+
+        <div class="detail-card">
+            <div class="detail-header">
+                <div class="cover-wrapper">
+                    @if (!string.IsNullOrEmpty(anime.ImageUrl))
+                    {
+                        <img src="@anime.ImageUrl" alt="@anime.Title cover" class="cover-image" onerror="this.src='/images/placeholder.png'" />
+                    }
+                    else
+                    {
+                        <div class="cover-placeholder">
+                            <span>&#x1F3AC;</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="detail-info">
+                    <h1 class="detail-title">@anime.Title</h1>
+                    @if (!string.IsNullOrEmpty(anime.OriginalTitle))
+                    {
+                        <p class="original-title">@anime.OriginalTitle</p>
+                    }
+
+                    <div class="meta-badges">
+                        @if (!string.IsNullOrEmpty(anime.Type))
+                        {
+                            <span class="badge badge-type">@anime.Type</span>
+                        }
+                        @if (anime.Episodes.HasValue)
+                        {
+                            <span class="badge badge-episodes">@anime.Episodes.Value Episodes</span>
+                        }
+                        @if (!string.IsNullOrEmpty(anime.Status))
+                        {
+                            <span class="badge badge-status status-@(NormalizeStatus(anime.Status))">@anime.Status</span>
+                        }
+                    </div>
+
+                    <div class="rating-section">
+                        @if (anime.Rating.HasValue)
+                        {
+                            <div class="rating-display">
+                                <span class="rating-score">@anime.Rating.Value.ToString("F1")</span>
+                                <span class="rating-max">/ 10</span>
+                                <div class="stars">
+                                    @for (int i = 1; i <= 5; i++)
+                                    {
+                                        var filled = anime.Rating.Value >= i * 2;
+                                        var half = !filled && anime.Rating.Value >= (i - 1) * 2 + 1;
+                                        <span class="star @(filled ? "filled" : half ? "half" : "")">&#9733;</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @if (anime.StartDate.HasValue)
+                    {
+                        <div class="dates-section">
+                            <span><strong>Started:</strong> @anime.StartDate.Value.ToString("MMM dd, yyyy")</span>
+                            @if (anime.EndDate.HasValue)
+                            {
+                                <span><strong>Ended:</strong> @anime.EndDate.Value.ToString("MMM dd, yyyy")</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(anime.Synopsis))
+            {
+                <div class="synopsis-section">
+                    <h2>Synopsis</h2>
+                    <p class="synopsis-text">@anime.Synopsis</p>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <span class="empty-icon">&#x1F6AB;</span>
+            <h3>Anime not found</h3>
+            <p>The requested anime could not be loaded.</p>
+            <button class="btn btn-primary" @onclick="goBack">Go Back</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Anime? anime;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await FetchAnimeDetails();
+    }
+
+    private async Task FetchAnimeDetails()
+    {
+        try
+        {
+            var httpClient = Http.CreateClient();
+            httpClient.BaseAddress = new Uri("https://api.jikan.moe/v4/");
+            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+
+            var response = await httpClient.GetAsync($"anime/{Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var data = doc.RootElement.GetProperty("data");
+                anime = MapFromJikan(data);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching anime details: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void goBack()
+    {
+        NavManager.NavigateTo("/");
+    }
+
+    private string NormalizeStatus(string status)
+    {
+        return status.ToLower().Replace(" ", "-").Replace(":", "");
+    }
+
+    private Anime MapFromJikan(System.Text.Json.JsonElement element)
+    {
+        var title = element.GetProperty("title").GetString() ?? "Unknown";
+        var imageUrl = element.TryGetProperty("images", out var images) &&
+                       images.TryGetProperty("jpg", out var jpg) &&
+                       jpg.TryGetProperty("large_image_url", out var largeUrl)
+            ? largeUrl.GetString()
+            : null;
+
+        return new Anime
+        {
+            Id = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
+            Title = title,
+            OriginalTitle = element.TryGetProperty("title_japanese", out var jt) ? jt.GetString() : null,
+            Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
+            ImageUrl = imageUrl,
+            Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,
+            Episodes = element.TryGetProperty("episodes", out var ep) && ep.ValueKind != System.Text.Json.JsonValueKind.Null ? ep.GetInt32() : (int?)null,
+            Rating = element.TryGetProperty("score", out var sc) && sc.ValueKind != System.Text.Json.JsonValueKind.Null ? (decimal?)sc.GetDouble() : null,
+            Status = element.TryGetProperty("status", out var st) ? st.GetString() : null,
+            StartDate = element.TryGetProperty("aired", out var aired) &&
+                        aired.TryGetProperty("from", out var from) && from.ValueKind != System.Text.Json.JsonValueKind.Null
+                ? DateTime.Parse(from.GetString() ?? "")
+                : (DateTime?)null,
+            EndDate = element.TryGetProperty("aired", out var ended) &&
+                      ended.TryGetProperty("to", out var to) && to.ValueKind != System.Text.Json.JsonValueKind.Null
+                ? DateTime.Parse(to.GetString() ?? "")
+                : (DateTime?)null,
+            SeasonId = 0
+        };
+    }
+}

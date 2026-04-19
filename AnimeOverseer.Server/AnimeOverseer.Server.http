@@ -1,0 +1,6 @@
+@AnimeOverseer.Server_HostAddress = http://localhost:5049
+
+GET {{AnimeOverseer.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

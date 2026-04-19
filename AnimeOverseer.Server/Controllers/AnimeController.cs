@@ -1,0 +1,52 @@
+using Microsoft.AspNetCore.Mvc;
+using AnimeOverseer.Server.Services;
+
+namespace AnimeOverseer.Server.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class AnimeController : ControllerBase
+{
+    private readonly IAnimeDataSource _dataSource;
+
+    public AnimeController(IAnimeDataSource dataSource)
+    {
+        _dataSource = dataSource;
+    }
+
+    [HttpGet("season")]
+    public async Task<IActionResult> GetSeasonAnimes(
+        [FromQuery] int year,
+        [FromQuery] string season = "spring")
+    {
+        var animes = await _dataSource.GetSeasonAnimes(year, season);
+        return Ok(animes);
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return BadRequest("Query parameter is required.");
+
+        var animes = await _dataSource.SearchAsync(query);
+        return Ok(animes);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var anime = await _dataSource.GetByIdAsync(id);
+        if (anime == null)
+            return NotFound();
+
+        return Ok(anime);
+    }
+
+    [HttpGet("genres")]
+    public async Task<IActionResult> GetGenres()
+    {
+        var genres = await _dataSource.GetAllGenresAsync();
+        return Ok(genres);
+    }
+}

@@ -1,0 +1,69 @@
+@using AnimeOverseer.Server.Models
+@inject NavigationManager NavManager
+
+<div class="anime-card" onclick="navigateToDetail">
+    <div class="card-image-wrapper">
+        @if (!string.IsNullOrEmpty(Anime.ImageUrl))
+        {
+            <img src="@Anime.ImageUrl" alt="@Anime.Title cover" class="card-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+        }
+        else
+        {
+            <div class="card-placeholder">
+                <span>&#x1F3AC;</span>
+            </div>
+        }
+        <div class="card-overlay">
+            @if (!string.IsNullOrEmpty(Anime.Type))
+            {
+                <span class="type-badge">@Anime.Type</span>
+            }
+            @if (Anime.Episodes.HasValue)
+            {
+                <span class="episodes-badge">@Anime.Episodes.Value EP</span>
+            }
+        </div>
+    </div>
+
+    <div class="card-content">
+        <h3 class="card-title" title="@Anime.Title">@Anime.Title</h3>
+        @if (!string.IsNullOrEmpty(Anime.OriginalTitle))
+        {
+            <p class="original-title-text">@Anime.OriginalTitle</p>
+        }
+
+        <div class="card-footer">
+            <div class="rating-badge">
+                @if (Anime.Rating.HasValue)
+                {
+                    <span class="rating-icon">&#x2605;</span>
+                    <span class="rating-value">@Anime.Rating.Value.ToString("F1")</span>
+                }
+                else
+                {
+                    <span class="no-rating">N/A</span>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(Anime.Status))
+            {
+                <span class="status-badge status-@(NormalizeStatus(Anime.Status))">@Anime.Status</span>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Anime Anime { get; set; } = default!;
+
+    private void navigateToDetail()
+    {
+        NavManager.NavigateTo($"/anime/{Anime.Id}");
+    }
+
+    private string NormalizeStatus(string status)
+    {
+        return status.ToLower().Replace(" ", "-").Replace(":", "");
+    }
+}

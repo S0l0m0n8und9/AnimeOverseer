@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/AnimeOverseer.Server/bin/Debug/net10.0
+/.vs
+/AnimeOverseer.Server/obj
+/AnimeOverseer/.vs/AnimeOverseer/v17
