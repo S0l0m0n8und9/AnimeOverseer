@@ -1,7 +1,7 @@
 @using AnimeOverseer.Server.Models
 @inject NavigationManager NavManager
 
-<div class="anime-card" onclick="navigateToDetail">
+<div class="anime-card" @onclick="navigateToDetail">
     <div class="card-image-wrapper">
         @if (!string.IsNullOrEmpty(Anime.ImageUrl))
         {

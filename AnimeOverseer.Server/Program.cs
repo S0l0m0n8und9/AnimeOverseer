@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using AnimeOverseer.Server;
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using AnimeOverseer.Server.Services;
@@ -6,8 +7,8 @@ using AnimeOverseer.Server.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
 
 builder.Services.AddDbContext<AnimeDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? 
@@ -37,10 +38,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseCors("AllowReactApp");
+app.UseAntiforgery();
 app.UseAuthorization();
-app.MapBlazorHub();
 app.MapControllers();
-app.MapRazorPages();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
 using (var scope = app.Services.CreateScope())
 {
