@@ -1,7 +1,8 @@
 @page "/"
 @rendermode InteractiveServer
 @using AnimeOverseer.Server.Models
-@inject IHttpClientFactory Http
+@using AnimeOverseer.Server.Services
+@inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 
 <PageTitle>AnimeOverseer - Dashboard</PageTitle>
@@ -19,7 +20,7 @@
 
             <label class="filter-label" for="year-select">Year:</label>
             <select id="year-select" @bind="selectedYear" @bind:event="oninput" class="form-select">
-                @for (int y = 2026; y >= 2020; y--)
+                @for (int y = 2030; y >= 2000; y--)
                 {
                     <option value="@y">@y</option>
                 }
@@ -75,7 +76,7 @@
 @code {
     private List<Anime> animes = new();
     private string selectedSeason = "spring";
-    private int selectedYear = 2026;
+    private int selectedYear = 2025;
     private string searchQuery = string.Empty;
     private bool isLoading = false;
 
@@ -91,27 +92,12 @@
 
         try
         {
-            var httpClient = Http.CreateClient();
-            httpClient.BaseAddress = new Uri("https://api.jikan.moe/v4/");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-
-            var response = await httpClient.GetAsync($"season/{selectedYear}/{selectedSeason}");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
-
-                animes = new List<Anime>();
-                foreach (var element in data.EnumerateArray())
-                {
-                    animes.Add(MapFromJikan(element));
-                }
-            }
+            animes = await AnimeDataSource.GetSeasonAnimes(selectedYear, selectedSeason);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error fetching season anime: {ex.Message}");
+            animes = new List<Anime>();
         }
         finally
         {
@@ -133,27 +119,12 @@
 
         try
         {
-            var httpClient = Http.CreateClient();
-            httpClient.BaseAddress = new Uri("https://api.jikan.moe/v4/");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-
-            var response = await httpClient.GetAsync($"anime?q={Uri.EscapeDataString(searchQuery)}&limit=50");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
-
-                animes = new List<Anime>();
-                foreach (var element in data.EnumerateArray())
-                {
-                    animes.Add(MapFromJikan(element));
-                }
-            }
+            animes = await AnimeDataSource.SearchAsync(searchQuery);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error searching anime: {ex.Message}");
+            animes = new List<Anime>();
         }
         finally
         {
@@ -168,37 +139,5 @@
         {
             SearchAnime();
         }
-    }
-
-    private Anime MapFromJikan(System.Text.Json.JsonElement element)
-    {
-        var title = element.GetProperty("title").GetString() ?? "Unknown";
-        var imageUrl = element.TryGetProperty("images", out var images) &&
-                       images.TryGetProperty("jpg", out var jpg) &&
-                       jpg.TryGetProperty("large_image_url", out var largeUrl)
-            ? largeUrl.GetString()
-            : null;
-
-        return new Anime
-        {
-            Id = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
-            Title = title,
-            OriginalTitle = element.TryGetProperty("title_japanese", out var jt) ? jt.GetString() : null,
-            Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
-            ImageUrl = imageUrl,
-            Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,
-            Episodes = element.TryGetProperty("episodes", out var ep) && ep.ValueKind != System.Text.Json.JsonValueKind.Null ? ep.GetInt32() : (int?)null,
-            Rating = element.TryGetProperty("score", out var sc) && sc.ValueKind != System.Text.Json.JsonValueKind.Null ? (decimal?)sc.GetDouble() : null,
-            Status = element.TryGetProperty("status", out var st) ? st.GetString() : null,
-            StartDate = element.TryGetProperty("aired", out var aired) &&
-                        aired.TryGetProperty("from", out var from) && from.ValueKind != System.Text.Json.JsonValueKind.Null
-                ? DateTime.Parse(from.GetString() ?? "")
-                : (DateTime?)null,
-            EndDate = element.TryGetProperty("aired", out var ended) &&
-                      ended.TryGetProperty("to", out var to) && to.ValueKind != System.Text.Json.JsonValueKind.Null
-                ? DateTime.Parse(to.GetString() ?? "")
-                : (DateTime?)null,
-            SeasonId = 0
-        };
     }
 }

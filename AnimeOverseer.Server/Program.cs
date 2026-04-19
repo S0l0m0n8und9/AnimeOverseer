@@ -24,10 +24,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddHttpClient<JikanApiService>();
+builder.Services.AddHttpClient<IAnimeDataSource, JikanApiService>();
 builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<KitsuApiService>();
-builder.Services.AddSingleton<IAnimeDataSource, JikanApiService>();
 
 var app = builder.Build();
 

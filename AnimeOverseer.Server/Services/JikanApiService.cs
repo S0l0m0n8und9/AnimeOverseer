@@ -21,7 +21,7 @@ public class JikanApiService : IAnimeDataSource
         {
             try
             {
-                var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/season/{year}/{s}");
+                var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/seasons/{year}/{s}");
                 if (response.IsSuccessStatusCode)
                 {
                     var json = await response.Content.ReadAsStringAsync();
