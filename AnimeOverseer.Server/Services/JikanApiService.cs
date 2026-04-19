@@ -110,7 +110,8 @@ public class JikanApiService : IAnimeDataSource
 
     private Anime MapFromJikan(JsonElement element, int year, string season)
     {
-        var title = element.GetProperty("title").GetString() ?? "Unknown";
+        var titleEnglish = element.TryGetProperty("title_english", out var te) && te.ValueKind != JsonValueKind.Null ? te.GetString() : null;
+        var title = !string.IsNullOrEmpty(titleEnglish) ? titleEnglish : element.GetProperty("title").GetString() ?? "Unknown";
         var imageUrl = element.TryGetProperty("images", out var images) &&
                        images.TryGetProperty("jpg", out var jpg) &&
                        jpg.TryGetProperty("large_image_url", out var largeUrl)
@@ -121,7 +122,7 @@ public class JikanApiService : IAnimeDataSource
         {
             MALId = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
             Title = title,
-            OriginalTitle = element.TryGetProperty("title_japanese", out var jt) ? jt.GetString() : null,
+            OriginalTitle = element.TryGetProperty("title", out var jt) && jt.ValueKind != JsonValueKind.Null ? jt.GetString() : null,
             Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
             ImageUrl = imageUrl,
             Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,
