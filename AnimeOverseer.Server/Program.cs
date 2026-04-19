@@ -6,6 +6,7 @@ using AnimeOverseer.Server.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
 builder.Services.AddDbContext<AnimeDbContext>(options =>
@@ -34,29 +35,12 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
-var hostPagePath = Path.Combine(Directory.GetCurrentDirectory(), "Pages", "_Host.cshtml");
-
 app.UseStaticFiles();
 app.UseCors("AllowReactApp");
 app.UseAuthorization();
 app.MapBlazorHub();
 app.MapControllers();
-
-var serveHost = async (HttpContext ctx) =>
-{
-    if (File.Exists(hostPagePath))
-    {
-        var content = await File.ReadAllTextAsync(hostPagePath);
-        ctx.Response.ContentType = "text/html";
-        await ctx.Response.WriteAsync(content);
-    }
-    else
-    {
-        ctx.Response.StatusCode = 404;
-    }
-};
-app.MapGet("/", serveHost);
-app.MapFallback(serveHost);
+app.MapRazorPages();
 
 using (var scope = app.Services.CreateScope())
 {
