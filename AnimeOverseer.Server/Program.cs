@@ -5,68 +5,66 @@ using AnimeOverseer.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddServerSideBlazor();
-builder.Services.AddRazorPages();
-// builder.Services.AddEndpointsApiExplorer();
-// builder.Services.AddSwaggerGen();
 
-// Database
 builder.Services.AddDbContext<AnimeDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? 
         "Data Source=animeoverseer.db"));
 
-// CORS for React frontend
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:5173", "http://localhost:5000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
 });
 
-// Anime data sources - register all three, default to Jikan
 builder.Services.AddHttpClient<JikanApiService>();
 builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<KitsuApiService>();
-
-// Register the primary data source (Jikan as default)
 builder.Services.AddSingleton<IAnimeDataSource, JikanApiService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    // app.UseSwagger();
-//     app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
 }
+
+var hostPagePath = Path.Combine(Directory.GetCurrentDirectory(), "Pages", "_Host.cshtml");
 
 app.UseStaticFiles();
 app.UseCors("AllowReactApp");
 app.UseAuthorization();
 app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
 app.MapControllers();
 
-// Seed initial data
+var serveHost = async (HttpContext ctx) =>
+{
+    if (File.Exists(hostPagePath))
+    {
+        var content = await File.ReadAllTextAsync(hostPagePath);
+        ctx.Response.ContentType = "text/html";
+        await ctx.Response.WriteAsync(content);
+    }
+    else
+    {
+        ctx.Response.StatusCode = 404;
+    }
+};
+app.MapGet("/", serveHost);
+app.MapFallback(serveHost);
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AnimeDbContext>();
     db.Database.EnsureCreated();
-    
-    // Seed genres if not present
     if (!db.Genres.Any())
     {
-        var genres = new[]
-        {
-            "Action", "Adventure", "Comedy", "Drama", "Fantasy",
-            "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life",
-            "Sports", "Supernatural", "Thriller"
-        };
+        var genres = new[] { "Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller" };
         foreach (var name in genres)
         {
             db.Genres.Add(new Genre { Name = name });
