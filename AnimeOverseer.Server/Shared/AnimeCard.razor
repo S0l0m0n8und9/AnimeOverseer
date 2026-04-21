@@ -3,9 +3,9 @@
 
 <div class="anime-card" @onclick="navigateToDetail">
     <div class="card-image-wrapper">
-        @if (!string.IsNullOrEmpty(Anime.ImageUrl))
+        @if (!string.IsNullOrEmpty(Anime.LocalImagePath) || !string.IsNullOrEmpty(Anime.ImageUrl))
         {
-            <img src="@Anime.ImageUrl" alt="@Anime.Title cover" class="card-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+            <img src="@(Anime.LocalImagePath ?? Anime.ImageUrl)" alt="@Anime.Title cover" class="card-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
         }
         else
         {
@@ -26,11 +26,8 @@
     </div>
 
     <div class="card-content">
-        <h3 class="card-title" title="@Anime.Title">@Anime.Title</h3>
-        @if (!string.IsNullOrEmpty(Anime.OriginalTitle))
-        {
-            <p class="original-title-text">@Anime.OriginalTitle</p>
-        }
+        <h3 class="card-title" title="@(Anime.Title ?? Anime.OriginalTitle)">@(Anime.Title ?? Anime.OriginalTitle)</h3>
+        <p class="original-title-text">@Anime.OriginalTitle</p>
 
         <div class="card-footer">
             <div class="rating-badge">

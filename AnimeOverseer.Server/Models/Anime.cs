@@ -35,6 +35,10 @@ public class Anime
 
     public DateTime? EndDate { get; set; }
 
+    public DateTime? CachedAt { get; set; }
+
+    public string? LocalImagePath { get; set; }
+
     public int SeasonId { get; set; }
     public Season Season { get; set; } = null!;
 

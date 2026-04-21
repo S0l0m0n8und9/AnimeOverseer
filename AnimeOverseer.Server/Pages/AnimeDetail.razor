@@ -160,7 +160,7 @@
 
     private Anime MapFromJikan(System.Text.Json.JsonElement element)
     {
-        var title = element.GetProperty("title").GetString() ?? "Unknown";
+        var title = element.GetProperty("title_english").GetString() ?? "Unknown";
         var imageUrl = element.TryGetProperty("images", out var images) &&
                        images.TryGetProperty("jpg", out var jpg) &&
                        jpg.TryGetProperty("large_image_url", out var largeUrl)
@@ -171,7 +171,7 @@
         {
             Id = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
             Title = title,
-            OriginalTitle = element.TryGetProperty("title_japanese", out var jt) ? jt.GetString() : null,
+            OriginalTitle = element.TryGetProperty("title", out var jt) ? jt.GetString() : null,
             Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
             ImageUrl = imageUrl,
             Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,

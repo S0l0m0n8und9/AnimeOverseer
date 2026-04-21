@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using AnimeOverseer.Server.Models;
 
@@ -7,37 +6,30 @@ namespace AnimeOverseer.Server.Services;
 public class JikanApiService : IAnimeDataSource
 {
     private readonly HttpClient _httpClient;
-    private static readonly string[] Seasons = { "spring", "summer", "fall", "winter" };
 
     public JikanApiService(HttpClient httpClient)
     {
         _httpClient = httpClient;
     }
 
-    public async Task<List<Anime>> GetSeasonAnimes(int year, string season)
+    public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
         var animes = new List<Anime>();
-        foreach (var s in Seasons)
+        try
         {
-            try
+            var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/seasons/{year}/{season}");
+            if (response.IsSuccessStatusCode)
             {
-                var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/seasons/{year}/{s}");
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(json);
-                    var data = doc.RootElement.GetProperty("data");
-
-                    foreach (var anime in data.EnumerateArray())
-                    {
-                        animes.Add(MapFromJikan(anime, year, s));
-                    }
-                }
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var data = doc.RootElement.GetProperty("data");
+                foreach (var anime in data.EnumerateArray())
+                    animes.Add(MapFromJikan(anime));
             }
-            catch
-            {
-                // Rate limiting or API errors - continue with other seasons
-            }
+        }
+        catch
+        {
+            // Rate limiting or API errors
         }
         return animes;
     }
@@ -53,17 +45,11 @@ public class JikanApiService : IAnimeDataSource
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
                 var data = doc.RootElement.GetProperty("data");
-
                 foreach (var anime in data.EnumerateArray())
-                {
-                    animes.Add(MapFromJikan(anime, 0, ""));
-                }
+                    animes.Add(MapFromJikan(anime));
             }
         }
-        catch
-        {
-            // Handle errors gracefully
-        }
+        catch { }
         return animes;
     }
 
@@ -77,13 +63,10 @@ public class JikanApiService : IAnimeDataSource
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
                 var data = doc.RootElement.GetProperty("data");
-                return MapFromJikan(data, 0, "");
+                return MapFromJikan(data);
             }
         }
-        catch
-        {
-            // Handle errors gracefully
-        }
+        catch { }
         return null;
     }
 
@@ -108,36 +91,40 @@ public class JikanApiService : IAnimeDataSource
         return Task.FromResult(genres);
     }
 
-    private Anime MapFromJikan(JsonElement element, int year, string season)
+    internal Anime MapFromJikan(JsonElement element)
     {
-        var titleEnglish = element.TryGetProperty("title_english", out var te) && te.ValueKind != JsonValueKind.Null ? te.GetString() : null;
-        var title = !string.IsNullOrEmpty(titleEnglish) ? titleEnglish : element.GetProperty("title").GetString() ?? "Unknown";
+        var titleEnglish = element.TryGetProperty("title_english", out var te) && te.ValueKind != JsonValueKind.Null
+            ? te.GetString() : null;
+        var title = !string.IsNullOrEmpty(titleEnglish)
+            ? titleEnglish
+            : element.GetProperty("title").GetString() ?? "Unknown";
+
         var imageUrl = element.TryGetProperty("images", out var images) &&
                        images.TryGetProperty("jpg", out var jpg) &&
                        jpg.TryGetProperty("large_image_url", out var largeUrl)
-            ? largeUrl.GetString()
-            : null;
+            ? largeUrl.GetString() : null;
 
         return new Anime
         {
             MALId = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
             Title = title,
-            OriginalTitle = element.TryGetProperty("title", out var jt) && jt.ValueKind != JsonValueKind.Null ? jt.GetString() : null,
+            OriginalTitle = element.TryGetProperty("title", out var jt) && jt.ValueKind != JsonValueKind.Null
+                ? jt.GetString() : null,
             Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
             ImageUrl = imageUrl,
             Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,
-            Episodes = element.TryGetProperty("episodes", out var ep) && ep.ValueKind != JsonValueKind.Null ? ep.GetInt32() : (int?)null,
-            Rating = element.TryGetProperty("score", out var sc) && sc.ValueKind != JsonValueKind.Null ? (decimal?)sc.GetDouble() : null,
+            Episodes = element.TryGetProperty("episodes", out var ep) && ep.ValueKind != JsonValueKind.Null
+                ? ep.GetInt32() : (int?)null,
+            Rating = element.TryGetProperty("score", out var sc) && sc.ValueKind != JsonValueKind.Null
+                ? (decimal?)sc.GetDouble() : null,
             Status = element.TryGetProperty("status", out var st) ? st.GetString() : null,
             StartDate = element.TryGetProperty("aired", out var aired) &&
                         aired.TryGetProperty("from", out var from) && from.ValueKind != JsonValueKind.Null
-                ? DateTime.Parse(from.GetString() ?? "")
-                : (DateTime?)null,
+                ? DateTime.Parse(from.GetString() ?? "") : (DateTime?)null,
             EndDate = element.TryGetProperty("aired", out var ended) &&
                       ended.TryGetProperty("to", out var to) && to.ValueKind != JsonValueKind.Null
-                ? DateTime.Parse(to.GetString() ?? "")
-                : (DateTime?)null,
-            SeasonId = 0 // Will be set by the service layer
+                ? DateTime.Parse(to.GetString() ?? "") : (DateTime?)null,
+            SeasonId = 0
         };
     }
 }

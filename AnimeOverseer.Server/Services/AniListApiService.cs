@@ -14,7 +14,7 @@ public class AniListApiService : IAnimeDataSource
         _httpClient = httpClient;
     }
 
-    public async Task<List<Anime>> GetSeasonAnimes(int year, string season)
+    public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
         var query = $@"
             {{

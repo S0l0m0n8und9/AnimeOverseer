@@ -6,3 +6,7 @@
 /.vs
 /AnimeOverseer.Server/obj
 /AnimeOverseer/.vs/AnimeOverseer/v17
+/AnimeOverseer.Server/wwwroot/images/cache
+/AnimeOverseer.Server/animeoverseer.db
+/AnimeOverseer.Server/animeoverseer.db-shm
+/AnimeOverseer.Server/animeoverseer.db-wal

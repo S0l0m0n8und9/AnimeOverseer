@@ -14,7 +14,7 @@ public class KitsuApiService : IAnimeDataSource
         _httpClient = httpClient;
     }
 
-    public async Task<List<Anime>> GetSeasonAnimes(int year, string season)
+    public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
         var animes = new List<Anime>();
         // Kitsu doesn't have direct season filtering, so we'll return popular anime
