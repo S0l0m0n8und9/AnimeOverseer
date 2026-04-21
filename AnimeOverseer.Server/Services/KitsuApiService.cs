@@ -118,7 +118,7 @@ public class KitsuApiService : IAnimeDataSource
 
         return new Anime
         {
-            KitsuId = element.TryGetProperty("id", out var id) ? id.GetInt32() : 0,
+            KitsuId = element.TryGetProperty("id", out var id) && int.TryParse(id.GetString(), out var parsedId) ? parsedId : 0,
             Title = title,
             Synopsis = synopsis,
             ImageUrl = coverImage,

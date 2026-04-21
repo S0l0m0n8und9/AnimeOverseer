@@ -59,7 +59,8 @@
 
     private void navigateToDetail()
     {
-        NavManager.NavigateTo($"/anime/{Anime.Id}");
+        var id = Anime.MALId ?? Anime.KitsuId ?? Anime.Id;
+        NavManager.NavigateTo($"/anime/{id}");
     }
 
     private string NormalizeStatus(string status)
