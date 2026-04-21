@@ -916,3 +916,280 @@ img {
     background: var(--accent);
     color: #fff;
 }
+
+/* =====================================================
+   Filter Builder (inline section inside controls-bar)
+   ===================================================== */
+
+/* Shared reset for all filter buttons — overrides any global .btn-like rules */
+.filter-section button {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    font-family: inherit;
+    outline: none;
+    width: auto;
+}
+
+.filter-section {
+    border-top: 1px solid var(--border-color);
+    margin-top: 1.25rem;
+    padding-top: 0.875rem;
+}
+
+/* ── Toggle row ────────────────────────────────────── */
+
+.filter-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0;
+    cursor: pointer;
+    width: 100%;
+    transition: color var(--transition-fast);
+}
+
+.filter-section-toggle:hover { color: var(--text-primary); }
+.filter-section-toggle--active { color: var(--accent-light); }
+
+.filter-section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.filter-badge {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.5rem;
+    line-height: 1.5;
+}
+
+.filter-chevron {
+    margin-left: auto;
+    font-size: 0.7rem;
+    opacity: 0.45;
+    transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.filter-chevron--open {
+    transform: rotate(90deg);
+    opacity: 0.9;
+}
+
+/* ── Expanded body ─────────────────────────────────── */
+
+.filter-body {
+    margin-top: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+/* ── Group card ────────────────────────────────────── */
+
+.filter-group {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.filter-group-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+}
+
+/* ── AND / OR segment control ──────────────────────── */
+
+.group-logic-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.logic-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.3rem 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.logic-btn:hover { color: var(--text-primary); }
+
+.logic-btn--active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* ── Connector pill between groups ─────────────────── */
+
+.group-connector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.125rem 0;
+}
+
+.group-connector::before,
+.group-connector::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
+.logic-pill {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 0.25rem 0.85rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity var(--transition-fast);
+    white-space: nowrap;
+}
+
+.logic-pill--and { border-color: var(--info);    color: var(--info); }
+.logic-pill--or  { border-color: var(--warning); color: var(--warning); }
+.logic-pill:hover { opacity: 0.75; }
+
+/* ── Condition rows ────────────────────────────────── */
+
+.condition-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+}
+
+.condition-field { width: 130px; flex-shrink: 0; }
+.condition-op    { width: 120px; flex-shrink: 0; }
+.condition-value { flex: 1; min-width: 100px; }
+
+/* Remove button */
+.condition-remove {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.condition-remove:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ── Add condition button ───────────────────────────── */
+
+.add-condition-btn {
+    background: transparent;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.75rem;
+    align-self: flex-start;
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.add-condition-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Footer ─────────────────────────────────────────── */
+
+.filter-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-top: 0.125rem;
+}
+
+.add-group-btn {
+    background: transparent;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.75rem;
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.add-group-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.clear-filters-btn {
+    background: transparent;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-sm);
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.75rem;
+    margin-left: auto;
+    transition: background var(--transition-fast);
+}
+
+.clear-filters-btn:hover {
+    background: rgba(239, 68, 68, 0.12);
+}
+
+/* ── Mobile ─────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+    .condition-row {
+        flex-wrap: wrap;
+    }
+
+    .condition-field,
+    .condition-op {
+        width: calc(50% - 0.2rem);
+    }
+
+    .condition-value {
+        width: 100%;
+        flex: none;
+    }
+}

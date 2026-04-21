@@ -1,0 +1,264 @@
+@using AnimeOverseer.Server.Models
+
+<div class="filter-section">
+    <button class="filter-section-toggle @(State.IsActive ? "filter-section-toggle--active" : "")"
+            @onclick="ToggleExpanded">
+        <span class="filter-section-label">
+            @if (State.IsActive)
+            {
+                <span class="filter-badge">@State.ActiveCount</span>
+            }
+            Filters
+        </span>
+        <span class="filter-chevron @(expanded ? "filter-chevron--open" : "")">&#x276F;</span>
+    </button>
+
+    @if (expanded)
+    {
+        <div class="filter-body">
+            @for (int gi = 0; gi < State.Groups.Count; gi++)
+            {
+                var g = State.Groups[gi];
+                var groupIndex = gi;
+
+                @if (gi > 0)
+                {
+                    <div class="group-connector">
+                        <button class="logic-pill @(State.TopLevelLogic == GroupLogic.And ? "logic-pill--and" : "logic-pill--or")"
+                                @onclick="ToggleTopLogic">
+                            @State.TopLevelLogic.ToString().ToUpper()
+                        </button>
+                    </div>
+                }
+
+                <div class="filter-group">
+                    <div class="filter-group-header">
+                        <div class="group-logic-toggle">
+                            <button class="logic-btn @(g.Logic == GroupLogic.And ? "logic-btn--active" : "")"
+                                    @onclick="() => SetGroupLogic(g, GroupLogic.And)">AND</button>
+                            <button class="logic-btn @(g.Logic == GroupLogic.Or ? "logic-btn--active" : "")"
+                                    @onclick="() => SetGroupLogic(g, GroupLogic.Or)">OR</button>
+                        </div>
+                        @if (State.Groups.Count > 1)
+                        {
+                            <button class="condition-remove" @onclick="() => RemoveGroup(groupIndex)" title="Remove group">&#x2715;</button>
+                        }
+                    </div>
+
+                    @foreach (var condition in g.Conditions)
+                    {
+                        var cond = condition;
+                        <div class="condition-row">
+                            <select class="form-select condition-field"
+                                    value="@cond.Field"
+                                    @onchange="e => ChangeField(cond, e)">
+                                <option value="@FilterField.Title">Title</option>
+                                <option value="@FilterField.OriginalTitle">Original Title</option>
+                                <option value="@FilterField.Type">Type</option>
+                                <option value="@FilterField.Status">Status</option>
+                                <option value="@FilterField.Season">Season</option>
+                                <option value="@FilterField.Episodes">Episodes</option>
+                                <option value="@FilterField.Rating">Rating</option>
+                            </select>
+
+                            <select class="form-select condition-op"
+                                    value="@cond.Operator"
+                                    @onchange="e => ChangeOperator(cond, e)">
+                                @foreach (var op in OperatorsFor(cond.Field))
+                                {
+                                    <option value="@op">@LabelFor(op)</option>
+                                }
+                            </select>
+
+                            @if (IsSelectField(cond.Field))
+                            {
+                                <select class="form-select condition-value"
+                                        value="@cond.Value"
+                                        @onchange="e => ChangeValue(cond, e)">
+                                    <option value="">Any</option>
+                                    @foreach (var v in SelectValuesFor(cond.Field))
+                                    {
+                                        <option value="@v">@v</option>
+                                    }
+                                </select>
+                            }
+                            else if (IsNumberField(cond.Field))
+                            {
+                                <input type="number" class="form-input condition-value"
+                                       placeholder="@PlaceholderFor(cond.Field)"
+                                       step="@(cond.Field == FilterField.Rating ? "0.1" : "1")"
+                                       min="0"
+                                       value="@cond.Value"
+                                       @onchange="e => ChangeValue(cond, e)" />
+                            }
+                            else
+                            {
+                                <input type="text" class="form-input condition-value"
+                                       placeholder="Value..."
+                                       value="@cond.Value"
+                                       @oninput="e => ChangeValueImmediate(cond, e)" />
+                            }
+
+                            <button class="condition-remove" @onclick="() => RemoveCondition(g, cond)" title="Remove">&#x2715;</button>
+                        </div>
+                    }
+
+                    <button class="add-condition-btn" @onclick="() => AddCondition(g)">&#x2B; Add Condition</button>
+                </div>
+            }
+
+            <div class="filter-footer">
+                <button class="add-group-btn" @onclick="AddGroup">&#x2B; Add Group</button>
+                @if (State.IsActive)
+                {
+                    <button class="clear-filters-btn" @onclick="ClearAll">&#x2715; Clear All</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public FilterState State { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool expanded = false;
+
+    private void ToggleExpanded() => expanded = !expanded;
+
+    private async Task Notify() => await OnChanged.InvokeAsync();
+
+    private async Task ToggleTopLogic()
+    {
+        State.TopLevelLogic = State.TopLevelLogic == GroupLogic.And ? GroupLogic.Or : GroupLogic.And;
+        await Notify();
+    }
+
+    private async Task SetGroupLogic(FilterGroup group, GroupLogic logic)
+    {
+        group.Logic = logic;
+        await Notify();
+    }
+
+    private async Task ChangeField(FilterCondition cond, ChangeEventArgs e)
+    {
+        cond.Field = Enum.Parse<FilterField>(e.Value!.ToString()!);
+        cond.Operator = OperatorsFor(cond.Field)[0];
+        cond.Value = string.Empty;
+        await Notify();
+    }
+
+    private async Task ChangeOperator(FilterCondition cond, ChangeEventArgs e)
+    {
+        cond.Operator = Enum.Parse<FilterOperator>(e.Value!.ToString()!);
+        await Notify();
+    }
+
+    private async Task ChangeValue(FilterCondition cond, ChangeEventArgs e)
+    {
+        cond.Value = e.Value?.ToString() ?? string.Empty;
+        await Notify();
+    }
+
+    private async Task ChangeValueImmediate(FilterCondition cond, ChangeEventArgs e)
+    {
+        cond.Value = e.Value?.ToString() ?? string.Empty;
+        await Notify();
+    }
+
+    private void AddCondition(FilterGroup group)
+    {
+        group.Conditions.Add(new FilterCondition());
+        OnChanged.InvokeAsync();
+    }
+
+    private async Task RemoveCondition(FilterGroup group, FilterCondition cond)
+    {
+        group.Conditions.Remove(cond);
+        if (group.Conditions.Count == 0)
+            group.Conditions.Add(new FilterCondition());
+        await Notify();
+    }
+
+    private async Task AddGroup()
+    {
+        State.Groups.Add(new FilterGroup());
+        await Notify();
+    }
+
+    private async Task RemoveGroup(int index)
+    {
+        State.Groups.RemoveAt(index);
+        await Notify();
+    }
+
+    private async Task ClearAll()
+    {
+        State.Groups.Clear();
+        State.Groups.Add(new FilterGroup());
+        State.TopLevelLogic = GroupLogic.And;
+        await Notify();
+    }
+
+    private static List<FilterOperator> OperatorsFor(FilterField field) => field switch
+    {
+        FilterField.Episodes or FilterField.Rating => [
+            FilterOperator.Equals,
+            FilterOperator.NotEquals,
+            FilterOperator.GreaterThan,
+            FilterOperator.GreaterThanOrEqual,
+            FilterOperator.LessThan,
+            FilterOperator.LessThanOrEqual
+        ],
+        FilterField.Type or FilterField.Status or FilterField.Season => [
+            FilterOperator.Equals,
+            FilterOperator.NotEquals,
+            FilterOperator.Contains,
+            FilterOperator.NotContains
+        ],
+        _ => [
+            FilterOperator.Contains,
+            FilterOperator.NotContains,
+            FilterOperator.StartsWith,
+            FilterOperator.EndsWith,
+            FilterOperator.Equals,
+            FilterOperator.NotEquals
+        ]
+    };
+
+    private static string LabelFor(FilterOperator op) => op switch
+    {
+        FilterOperator.Contains           => "contains",
+        FilterOperator.NotContains        => "not contains",
+        FilterOperator.StartsWith         => "starts with",
+        FilterOperator.EndsWith           => "ends with",
+        FilterOperator.Equals             => "=",
+        FilterOperator.NotEquals          => "≠",
+        FilterOperator.GreaterThan        => ">",
+        FilterOperator.LessThan           => "<",
+        FilterOperator.GreaterThanOrEqual => "≥",
+        FilterOperator.LessThanOrEqual    => "≤",
+        _                                 => op.ToString()
+    };
+
+    private static bool IsSelectField(FilterField f) =>
+        f is FilterField.Type or FilterField.Status or FilterField.Season;
+
+    private static bool IsNumberField(FilterField f) =>
+        f is FilterField.Episodes or FilterField.Rating;
+
+    private static string PlaceholderFor(FilterField f) => f switch
+    {
+        FilterField.Episodes => "e.g. 12",
+        FilterField.Rating   => "e.g. 7.5",
+        _                    => "Value..."
+    };
+
+    private static string[] SelectValuesFor(FilterField f) => f switch
+    {
+        FilterField.Type   => ["TV", "Movie", "OVA", "ONA", "Special", "Music"],
+        FilterField.Status => ["Currently Airing", "Finished Airing", "Not yet aired"],
+        FilterField.Season => ["spring", "summer", "fall", "winter"],
+        _                  => []
+    };
+}
