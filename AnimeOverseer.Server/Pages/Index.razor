@@ -108,8 +108,19 @@
     private List<Anime> allAnimes = new();
     private FilterState filterState = new();
     private SortState sortState = new();
-    private string selectedSeason = "spring";
-    private int selectedYear = 2025;
+    private string selectedSeason = CurrentAnimeSeason();
+    private int selectedYear = CurrentAnimeYear();
+
+    // Anime seasons follow Japan (Northern Hemisphere) regardless of server locale.
+    private static string CurrentAnimeSeason() => DateTime.UtcNow.Month switch
+    {
+        1 or 2 or 3   => "winter",
+        4 or 5 or 6   => "spring",
+        7 or 8 or 9   => "summer",
+        _             => "fall"
+    };
+
+    private static int CurrentAnimeYear() => DateTime.UtcNow.Year;
     private string searchQuery = string.Empty;
     private bool isLoading = false;
     private bool isRefreshing = false;
@@ -151,8 +162,8 @@
     {
         var qs = ParseQuery(uri);
 
-        selectedSeason = qs.GetValueOrDefault("season", "spring");
-        selectedYear   = qs.TryGetValue("year", out var y) && int.TryParse(y, out var yi) ? yi : 2025;
+        selectedSeason = qs.GetValueOrDefault("season", CurrentAnimeSeason());
+        selectedYear   = qs.TryGetValue("year", out var y) && int.TryParse(y, out var yi) ? yi : CurrentAnimeYear();
         searchQuery    = qs.GetValueOrDefault("q", string.Empty);
         filterState    = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
