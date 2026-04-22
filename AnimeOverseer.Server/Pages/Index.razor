@@ -2,8 +2,10 @@
 @rendermode InteractiveServer
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
+@using System.Text.Json
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
+@implements IDisposable
 
 <PageTitle>AnimeOverseer - Dashboard</PageTitle>
 
@@ -38,7 +40,8 @@
         <div class="search-row">
             <div class="search-wrapper">
                 <span class="search-icon">&#x1F50D;</span>
-                <input type="text" id="search-input" placeholder="Search anime by title..." @bind="searchQuery" @bind:event="oninput" @onkeydown="HandleKeyDown" class="form-input search-input" />
+                <input type="text" id="search-input" placeholder="Search anime by title..." @bind="searchQuery"
+                       @bind:event="oninput" @onkeydown="HandleKeyDown" class="form-input search-input" />
             </div>
         </div>
 
@@ -54,7 +57,7 @@
         {
             <span>@allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") found</span>
         }
-        @if (searchQuery.Length > 0)
+        @if (!string.IsNullOrEmpty(searchQuery))
         {
             <span class="search-hint">Showing results for "@searchQuery"</span>
         }
@@ -107,56 +110,190 @@
     private string searchQuery = string.Empty;
     private bool isLoading = false;
     private bool isRefreshing = false;
+    private bool _ownNavigation = false;
 
     private List<Anime> DisplayedAnimes => FilterEngine.Apply(allAnimes, filterState);
 
+    // ── Lifecycle ────────────────────────────────────────────
+
     protected override async Task OnInitializedAsync()
     {
-        await FetchSeasonAnimes();
+        NavManager.LocationChanged += OnLocationChanged;
+        await RestoreFromUrl(NavManager.Uri);
     }
 
-    private void OnFilterChanged() => StateHasChanged();
+    public void Dispose()
+    {
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
 
-    private async Task FetchSeasonAnimes()
+    // Fires on browser back/forward and on any NavigateTo call.
+    // Skip if WE initiated the navigation.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_ownNavigation) { _ownNavigation = false; return; }
+
+        _ = InvokeAsync(async () =>
+        {
+            await RestoreFromUrl(e.Location);
+            StateHasChanged();
+        });
+    }
+
+    // ── URL ──────────────────────────────────────────────────
+
+    // Parses URL, updates all state fields, then loads data.
+    // Never calls PushUrl — URL is already correct when this runs.
+    private async Task RestoreFromUrl(string uri)
+    {
+        var qs = ParseQuery(uri);
+
+        selectedSeason = qs.GetValueOrDefault("season", "spring");
+        selectedYear   = qs.TryGetValue("year", out var y) && int.TryParse(y, out var yi) ? yi : 2025;
+        searchQuery    = qs.GetValueOrDefault("q", string.Empty);
+        filterState    = qs.TryGetValue("filters", out var f)
+            ? DeserializeFilters(f) ?? new FilterState()
+            : new FilterState();
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+            await LoadSearch();
+        else
+            await LoadSeason();
+    }
+
+    // Push a new history entry (Search Season / text search).
+    // Use replace:true for in-place updates (filter changes, refresh).
+    private void PushUrl(bool replace = false)
+    {
+        _ownNavigation = true;
+        NavManager.NavigateTo(BuildUrl(), replace: replace);
+    }
+
+    private string BuildUrl()
+    {
+        var parts = new List<string>
+        {
+            $"season={Uri.EscapeDataString(selectedSeason)}",
+            $"year={selectedYear}"
+        };
+        if (!string.IsNullOrEmpty(searchQuery))
+            parts.Add($"q={Uri.EscapeDataString(searchQuery)}");
+        if (filterState.IsActive)
+            parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
+
+        return "/?" + string.Join("&", parts);
+    }
+
+    private static Dictionary<string, string> ParseQuery(string uri)
+    {
+        var idx = uri.IndexOf('?');
+        if (idx < 0) return new(StringComparer.OrdinalIgnoreCase);
+
+        return uri[(idx + 1)..]
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2))
+            .Where(p => p.Length == 2)
+            .ToDictionary(
+                p => Uri.UnescapeDataString(p[0]),
+                p => Uri.UnescapeDataString(p[1]),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    // Compact serialisation — omits GUIDs, only stores meaningful values.
+    private static string SerializeFilters(FilterState state)
+    {
+        var dto = new
+        {
+            l = (int)state.TopLevelLogic,
+            g = state.Groups
+                .Select(g => new
+                {
+                    l = (int)g.Logic,
+                    c = g.Conditions
+                        .Where(c => !string.IsNullOrEmpty(c.Value))
+                        .Select(c => new { f = (int)c.Field, o = (int)c.Operator, v = c.Value })
+                        .ToArray()
+                })
+                .Where(g => g.c.Length > 0)
+                .ToArray()
+        };
+        return JsonSerializer.Serialize(dto);
+    }
+
+    private static FilterState? DeserializeFilters(string encoded)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(encoded);
+            var root = doc.RootElement;
+            var state = new FilterState
+            {
+                TopLevelLogic = (GroupLogic)root.GetProperty("l").GetInt32(),
+                Groups = root.GetProperty("g").EnumerateArray().Select(g => new FilterGroup
+                {
+                    Logic = (GroupLogic)g.GetProperty("l").GetInt32(),
+                    Conditions = g.GetProperty("c").EnumerateArray().Select(c => new FilterCondition
+                    {
+                        Field    = (FilterField)c.GetProperty("f").GetInt32(),
+                        Operator = (FilterOperator)c.GetProperty("o").GetInt32(),
+                        Value    = c.GetProperty("v").GetString() ?? string.Empty
+                    }).ToList()
+                }).ToList()
+            };
+            if (state.Groups.Count == 0) state.Groups.Add(new FilterGroup());
+            return state;
+        }
+        catch { return null; }
+    }
+
+    // ── Data loading (no URL side-effects — safe to call from RestoreFromUrl) ──
+
+    private async Task LoadSeason(bool forceRefresh = false)
     {
         isLoading = true;
         StateHasChanged();
         try
         {
-            allAnimes = await AnimeDataSource.GetSeasonAnimes(selectedYear, selectedSeason);
+            allAnimes = await AnimeDataSource.GetSeasonAnimes(selectedYear, selectedSeason, forceRefresh);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error fetching season anime: {ex.Message}");
-            allAnimes = new List<Anime>();
+            allAnimes = new();
         }
-        finally
+        finally { isLoading = false; isRefreshing = false; StateHasChanged(); }
+    }
+
+    private async Task LoadSearch()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
         {
-            isLoading = false;
-            StateHasChanged();
+            allAnimes = await AnimeDataSource.SearchAsync(searchQuery);
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching: {ex.Message}");
+            allAnimes = new();
+        }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    // ── User actions (push URL then load) ────────────────────
+
+    private async Task FetchSeasonAnimes()
+    {
+        searchQuery = string.Empty;
+        PushUrl(replace: false);
+        await LoadSeason();
     }
 
     private async Task RefreshFromWeb()
     {
-        isLoading = true;
         isRefreshing = true;
-        StateHasChanged();
-        try
-        {
-            allAnimes = await AnimeDataSource.GetSeasonAnimes(selectedYear, selectedSeason, forceRefresh: true);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error refreshing anime: {ex.Message}");
-            allAnimes = new List<Anime>();
-        }
-        finally
-        {
-            isLoading = false;
-            isRefreshing = false;
-            StateHasChanged();
-        }
+        PushUrl(replace: true);
+        await LoadSeason(forceRefresh: true);
     }
 
     private async Task SearchAnime()
@@ -166,28 +303,19 @@
             await FetchSeasonAnimes();
             return;
         }
+        PushUrl(replace: false);
+        await LoadSearch();
+    }
 
-        isLoading = true;
+    // Filter changes replace the current history entry (too frequent for push).
+    private void OnFilterChanged()
+    {
+        PushUrl(replace: true);
         StateHasChanged();
-        try
-        {
-            allAnimes = await AnimeDataSource.SearchAsync(searchQuery);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error searching anime: {ex.Message}");
-            allAnimes = new List<Anime>();
-        }
-        finally
-        {
-            isLoading = false;
-            StateHasChanged();
-        }
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs args)
     {
-        if (args.Key == "Enter")
-            await SearchAnime();
+        if (args.Key == "Enter") await SearchAnime();
     }
 }
