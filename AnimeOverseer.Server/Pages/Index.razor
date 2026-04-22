@@ -3,6 +3,7 @@
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
 @using System.Text.Json
+@using System.Text.Json.Serialization
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 @implements IDisposable
@@ -46,6 +47,7 @@
         </div>
 
         <FilterBuilder State="filterState" OnChanged="OnFilterChanged" />
+        <SortBuilder State="sortState" OnChanged="OnSortChanged" />
     </div>
 
     <div class="results-info">
@@ -105,6 +107,7 @@
 @code {
     private List<Anime> allAnimes = new();
     private FilterState filterState = new();
+    private SortState sortState = new();
     private string selectedSeason = "spring";
     private int selectedYear = 2025;
     private string searchQuery = string.Empty;
@@ -112,7 +115,7 @@
     private bool isRefreshing = false;
     private bool _ownNavigation = false;
 
-    private List<Anime> DisplayedAnimes => FilterEngine.Apply(allAnimes, filterState);
+    private List<Anime> DisplayedAnimes => SortEngine.Apply(FilterEngine.Apply(allAnimes, filterState), sortState);
 
     // ── Lifecycle ────────────────────────────────────────────
 
@@ -154,6 +157,9 @@
         filterState    = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
+        sortState      = qs.TryGetValue("sort", out var s)
+            ? DeserializeSort(s) ?? new SortState()
+            : new SortState();
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
@@ -180,6 +186,8 @@
             parts.Add($"q={Uri.EscapeDataString(searchQuery)}");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
+        if (sortState.IsActive)
+            parts.Add($"sort={Uri.EscapeDataString(SerializeSort(sortState))}");
 
         return "/?" + string.Join("&", parts);
     }
@@ -218,6 +226,32 @@
                 .ToArray()
         };
         return JsonSerializer.Serialize(dto);
+    }
+
+    private static string SerializeSort(SortState state)
+    {
+        var dto = state.Criteria
+            .Select(c => new { f = (int)c.Field, d = (int)c.Direction })
+            .ToArray();
+        return JsonSerializer.Serialize(dto);
+    }
+
+    private static SortState? DeserializeSort(string encoded)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(encoded);
+            var state = new SortState
+            {
+                Criteria = doc.RootElement.EnumerateArray().Select(c => new SortCriterion
+                {
+                    Field     = (SortField)c.GetProperty("f").GetInt32(),
+                    Direction = (SortDirection)c.GetProperty("d").GetInt32()
+                }).ToList()
+            };
+            return state;
+        }
+        catch { return null; }
     }
 
     private static FilterState? DeserializeFilters(string encoded)
@@ -307,8 +341,13 @@
         await LoadSearch();
     }
 
-    // Filter changes replace the current history entry (too frequent for push).
     private void OnFilterChanged()
+    {
+        PushUrl(replace: true);
+        StateHasChanged();
+    }
+
+    private void OnSortChanged()
     {
         PushUrl(replace: true);
         StateHasChanged();

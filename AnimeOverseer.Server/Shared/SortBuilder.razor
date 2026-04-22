@@ -1,0 +1,99 @@
+@using AnimeOverseer.Server.Models
+
+<div class="filter-section">
+    <button class="filter-section-toggle @(State.IsActive ? "filter-section-toggle--active" : "")"
+            @onclick="ToggleExpanded">
+        <span class="filter-section-label">
+            @if (State.IsActive)
+            {
+                <span class="filter-badge">@State.Criteria.Count</span>
+            }
+            Sort
+        </span>
+        <span class="filter-chevron @(expanded ? "filter-chevron--open" : "")">&#x276F;</span>
+    </button>
+
+    @if (expanded)
+    {
+        <div class="filter-body">
+            @for (int i = 0; i < State.Criteria.Count; i++)
+            {
+                var criterion = State.Criteria[i];
+                var index = i;
+
+                <div class="condition-row sort-criterion-row">
+                    <span class="sort-ordinal">@(index + 1)</span>
+
+                    <select class="form-select condition-field"
+                            value="@criterion.Field"
+                            @onchange="e => ChangeField(criterion, e)">
+                        <option value="@SortField.Title">Title</option>
+                        <option value="@SortField.Type">Type</option>
+                        <option value="@SortField.Episodes">Episodes</option>
+                        <option value="@SortField.Rating">Rating</option>
+                        <option value="@SortField.Status">Status</option>
+                        <option value="@SortField.Season">Season</option>
+                    </select>
+
+                    <div class="group-logic-toggle">
+                        <button class="logic-btn @(criterion.Direction == SortDirection.Ascending ? "logic-btn--active" : "")"
+                                @onclick="() => SetDirection(criterion, SortDirection.Ascending)">&#x2191; ASC</button>
+                        <button class="logic-btn @(criterion.Direction == SortDirection.Descending ? "logic-btn--active" : "")"
+                                @onclick="() => SetDirection(criterion, SortDirection.Descending)">&#x2193; DESC</button>
+                    </div>
+
+                    <button class="condition-remove" @onclick="() => RemoveCriterion(index)" title="Remove">&#x2715;</button>
+                </div>
+            }
+
+            <div class="filter-footer">
+                <button class="add-condition-btn" @onclick="AddCriterion">&#x2B; Add Sort</button>
+                @if (State.IsActive)
+                {
+                    <button class="clear-filters-btn" @onclick="ClearAll">&#x2715; Clear All</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public SortState State { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool expanded = false;
+
+    private void ToggleExpanded() => expanded = !expanded;
+
+    private async Task Notify() => await OnChanged.InvokeAsync();
+
+    private async Task ChangeField(SortCriterion criterion, ChangeEventArgs e)
+    {
+        criterion.Field = Enum.Parse<SortField>(e.Value!.ToString()!);
+        await Notify();
+    }
+
+    private async Task SetDirection(SortCriterion criterion, SortDirection direction)
+    {
+        criterion.Direction = direction;
+        await Notify();
+    }
+
+    private async Task AddCriterion()
+    {
+        State.Criteria.Add(new SortCriterion());
+        await Notify();
+    }
+
+    private async Task RemoveCriterion(int index)
+    {
+        State.Criteria.RemoveAt(index);
+        await Notify();
+    }
+
+    private async Task ClearAll()
+    {
+        State.Criteria.Clear();
+        await Notify();
+    }
+}

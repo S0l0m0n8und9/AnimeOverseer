@@ -1176,6 +1176,27 @@ img {
     background: rgba(239, 68, 68, 0.12);
 }
 
+/* ── Sort builder ───────────────────────────────────── */
+
+.sort-criterion-row {
+    align-items: center;
+}
+
+.sort-ordinal {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
 /* ── Mobile ─────────────────────────────────────────── */
 
 @media (max-width: 640px) {
