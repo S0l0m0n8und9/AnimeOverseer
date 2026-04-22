@@ -38,6 +38,7 @@ public class AnimeCacheService : IAnimeDataSource
         var threshold = DateTime.UtcNow.Subtract(DetailCacheTtl);
         var cached = await _db.Animes
             .Include(a => a.Season)
+            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
             .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null && a.CachedAt > threshold);
 
         if (cached != null) return cached;
@@ -80,6 +81,7 @@ public class AnimeCacheService : IAnimeDataSource
 
         var all = await _db.Animes
             .Include(a => a.Season)
+            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
             .Where(a => a.Season.Year == year)
             .ToListAsync();
 
@@ -216,6 +218,61 @@ public class AnimeCacheService : IAnimeDataSource
             _db.Animes.Add(anime);
         }
 
+        await _db.SaveChangesAsync();
+        await SyncGenresBatchAsync(animes);
+    }
+
+    private async Task SyncGenresBatchAsync(List<Anime> sourceAnimes)
+    {
+        var sourcesWithGenres = sourceAnimes
+            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 && a.AnimeGenres.Count > 0)
+            .ToList();
+        if (sourcesWithGenres.Count == 0) return;
+
+        // Collect all unique genre names
+        var allNames = sourcesWithGenres
+            .SelectMany(a => a.AnimeGenres.Select(ag => ag.Genre.Name.Trim()))
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Load or create Genre rows
+        var existing = await _db.Genres
+            .Where(g => allNames.Contains(g.Name))
+            .ToDictionaryAsync(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in allNames.Where(n => !existing.ContainsKey(n)))
+        {
+            var g = new Genre { Name = name };
+            _db.Genres.Add(g);
+            existing[name] = g;
+        }
+        await _db.SaveChangesAsync();
+
+        // Load DB animes for these MAL IDs
+        var malIds = sourcesWithGenres.Select(a => a.MALId!.Value).ToList();
+        var dbAnimes = await _db.Animes
+            .Where(a => a.MALId != null && malIds.Contains(a.MALId.Value))
+            .ToListAsync();
+        var dbByMalId = dbAnimes.ToDictionary(a => a.MALId!.Value);
+
+        // Remove old genre links and re-add
+        var dbIds = dbAnimes.Select(a => a.Id).ToList();
+        var oldLinks = await _db.AnimeGenres.Where(ag => dbIds.Contains(ag.AnimeId)).ToListAsync();
+        _db.AnimeGenres.RemoveRange(oldLinks);
+
+        var addedLinks = new HashSet<(int AnimeId, int GenreId)>();
+        foreach (var source in sourcesWithGenres)
+        {
+            if (!dbByMalId.TryGetValue(source.MALId!.Value, out var dbAnime)) continue;
+            foreach (var ag in source.AnimeGenres)
+            {
+                var name = ag.Genre.Name.Trim();
+                if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var genre)) continue;
+                if (!addedLinks.Add((dbAnime.Id, genre.Id))) continue;
+                _db.AnimeGenres.Add(new AnimeGenre { AnimeId = dbAnime.Id, GenreId = genre.Id });
+            }
+        }
         await _db.SaveChangesAsync();
     }
 

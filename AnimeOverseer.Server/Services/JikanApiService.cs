@@ -104,6 +104,14 @@ public class JikanApiService : IAnimeDataSource
                        jpg.TryGetProperty("large_image_url", out var largeUrl)
             ? largeUrl.GetString() : null;
 
+        var genres = element.TryGetProperty("genres", out var genresEl)
+            ? genresEl.EnumerateArray()
+                .Select(g => g.TryGetProperty("name", out var gn) ? gn.GetString() : null)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Select(n => new AnimeGenre { Genre = new Genre { Name = n! } })
+                .ToList()
+            : new List<AnimeGenre>();
+
         return new Anime
         {
             MALId = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
@@ -124,7 +132,8 @@ public class JikanApiService : IAnimeDataSource
             EndDate = element.TryGetProperty("aired", out var ended) &&
                       ended.TryGetProperty("to", out var to) && to.ValueKind != JsonValueKind.Null
                 ? DateTime.Parse(to.GetString() ?? "") : (DateTime?)null,
-            SeasonId = 0
+            SeasonId = 0,
+            AnimeGenres = genres
         };
     }
 }

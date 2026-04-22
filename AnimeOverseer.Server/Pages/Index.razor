@@ -46,7 +46,7 @@
             </div>
         </div>
 
-        <FilterBuilder State="filterState" OnChanged="OnFilterChanged" />
+        <FilterBuilder State="filterState" OnChanged="OnFilterChanged" AvailableGenres="AvailableGenres" />
         <SortBuilder State="sortState" OnChanged="OnSortChanged" />
     </div>
 
@@ -127,6 +127,13 @@
     private bool _ownNavigation = false;
 
     private List<Anime> DisplayedAnimes => SortEngine.Apply(FilterEngine.Apply(allAnimes, filterState), sortState);
+
+    private List<string> AvailableGenres => allAnimes
+        .SelectMany(a => a.AnimeGenres.Select(ag => ag.Genre?.Name ?? ""))
+        .Where(n => !string.IsNullOrEmpty(n))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(n => n)
+        .ToList();
 
     // ── Lifecycle ────────────────────────────────────────────
 

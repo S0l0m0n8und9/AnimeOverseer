@@ -34,7 +34,8 @@ public enum FilterField
     Status,
     Season,
     Episodes,
-    Rating
+    Rating,
+    Genres
 }
 
 public enum FilterOperator

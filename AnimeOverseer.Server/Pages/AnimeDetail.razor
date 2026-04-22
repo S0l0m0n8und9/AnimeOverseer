@@ -1,7 +1,8 @@
 @page "/anime/{id:int}"
 @rendermode InteractiveServer
 @using AnimeOverseer.Server.Models
-@inject IHttpClientFactory Http
+@using AnimeOverseer.Server.Services
+@inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 
 <PageTitle>@(anime?.Title ?? "Loading...") - AnimeOverseer</PageTitle>
@@ -23,9 +24,9 @@
         <div class="detail-card">
             <div class="detail-header">
                 <div class="cover-wrapper">
-                    @if (!string.IsNullOrEmpty(anime.ImageUrl))
+                    @if (!string.IsNullOrEmpty(anime.LocalImagePath) || !string.IsNullOrEmpty(anime.ImageUrl))
                     {
-                        <img src="@anime.ImageUrl" alt="@anime.Title cover" class="cover-image" onerror="this.src='/images/placeholder.png'" />
+                        <img src="@(anime.LocalImagePath ?? anime.ImageUrl)" alt="@anime.Title cover" class="cover-image" onerror="this.src='/images/placeholder.png'" />
                     }
                     else
                     {
@@ -56,6 +57,16 @@
                             <span class="badge badge-status status-@(NormalizeStatus(anime.Status))">@anime.Status</span>
                         }
                     </div>
+
+                    @if (anime.AnimeGenres.Count > 0)
+                    {
+                        <div class="genre-badges">
+                            @foreach (var ag in anime.AnimeGenres)
+                            {
+                                <span class="badge badge-genre">@ag.Genre.Name</span>
+                            }
+                        </div>
+                    }
 
                     <div class="rating-section">
                         @if (anime.Rating.HasValue)
@@ -117,25 +128,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await FetchAnimeDetails();
-    }
-
-    private async Task FetchAnimeDetails()
-    {
         try
         {
-            var httpClient = Http.CreateClient();
-            httpClient.BaseAddress = new Uri("https://api.jikan.moe/v4/");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-
-            var response = await httpClient.GetAsync($"anime/{Id}");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
-                anime = MapFromJikan(data);
-            }
+            anime = await AnimeDataSource.GetByIdAsync(Id);
         }
         catch (Exception ex)
         {
@@ -144,49 +139,11 @@
         finally
         {
             isLoading = false;
-            StateHasChanged();
         }
     }
 
-    private void goBack()
-    {
-        NavManager.NavigateTo("/");
-    }
+    private void goBack() => NavManager.NavigateTo("/");
 
-    private string NormalizeStatus(string status)
-    {
-        return status.ToLower().Replace(" ", "-").Replace(":", "");
-    }
-
-    private Anime MapFromJikan(System.Text.Json.JsonElement element)
-    {
-        var title = element.GetProperty("title_english").GetString() ?? "Unknown";
-        var imageUrl = element.TryGetProperty("images", out var images) &&
-                       images.TryGetProperty("jpg", out var jpg) &&
-                       jpg.TryGetProperty("large_image_url", out var largeUrl)
-            ? largeUrl.GetString()
-            : null;
-
-        return new Anime
-        {
-            Id = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
-            Title = title,
-            OriginalTitle = element.TryGetProperty("title", out var jt) ? jt.GetString() : null,
-            Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",
-            ImageUrl = imageUrl,
-            Type = element.TryGetProperty("type", out var t) ? t.GetString() : null,
-            Episodes = element.TryGetProperty("episodes", out var ep) && ep.ValueKind != System.Text.Json.JsonValueKind.Null ? ep.GetInt32() : (int?)null,
-            Rating = element.TryGetProperty("score", out var sc) && sc.ValueKind != System.Text.Json.JsonValueKind.Null ? (decimal?)sc.GetDouble() : null,
-            Status = element.TryGetProperty("status", out var st) ? st.GetString() : null,
-            StartDate = element.TryGetProperty("aired", out var aired) &&
-                        aired.TryGetProperty("from", out var from) && from.ValueKind != System.Text.Json.JsonValueKind.Null
-                ? DateTime.Parse(from.GetString() ?? "")
-                : (DateTime?)null,
-            EndDate = element.TryGetProperty("aired", out var ended) &&
-                      ended.TryGetProperty("to", out var to) && to.ValueKind != System.Text.Json.JsonValueKind.Null
-                ? DateTime.Parse(to.GetString() ?? "")
-                : (DateTime?)null,
-            SeasonId = 0
-        };
-    }
+    private string NormalizeStatus(string status) =>
+        status.ToLower().Replace(" ", "-").Replace(":", "");
 }

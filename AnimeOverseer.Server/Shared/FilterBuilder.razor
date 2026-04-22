@@ -59,6 +59,7 @@
                                 <option value="@FilterField.Season">Season</option>
                                 <option value="@FilterField.Episodes">Episodes</option>
                                 <option value="@FilterField.Rating">Rating</option>
+                                <option value="@FilterField.Genres">Genres</option>
                             </select>
 
                             <select class="form-select condition-op"
@@ -79,6 +80,18 @@
                                     @foreach (var v in SelectValuesFor(cond.Field))
                                     {
                                         <option value="@v">@v</option>
+                                    }
+                                </select>
+                            }
+                            else if (IsGenreSelectField(cond) && AvailableGenres.Count > 0)
+                            {
+                                <select class="form-select condition-value"
+                                        value="@cond.Value"
+                                        @onchange="e => ChangeValue(cond, e)">
+                                    <option value="">Any</option>
+                                    @foreach (var genre in AvailableGenres)
+                                    {
+                                        <option value="@genre">@genre</option>
                                     }
                                 </select>
                             }
@@ -121,6 +134,7 @@
 @code {
     [Parameter] public FilterState State { get; set; } = new();
     [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public List<string> AvailableGenres { get; set; } = [];
 
     private bool expanded = false;
 
@@ -243,6 +257,10 @@
 
     private static bool IsSelectField(FilterField f) =>
         f is FilterField.Type or FilterField.Status or FilterField.Season;
+
+    private static bool IsGenreSelectField(FilterCondition c) =>
+        c.Field == FilterField.Genres &&
+        c.Operator is FilterOperator.Equals or FilterOperator.NotEquals;
 
     private static bool IsNumberField(FilterField f) =>
         f is FilterField.Episodes or FilterField.Rating;

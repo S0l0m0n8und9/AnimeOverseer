@@ -41,7 +41,19 @@ public static class FilterEngine
             FilterField.Season       => MatchText(anime.Season?.Name ?? "", c.Operator, val),
             FilterField.Episodes     => MatchNumber((double?)anime.Episodes, c.Operator, val),
             FilterField.Rating       => MatchNumber((double?)anime.Rating, c.Operator, val),
+            FilterField.Genres       => MatchGenres(anime, c.Operator, val),
             _                        => true
+        };
+    }
+
+    private static bool MatchGenres(Anime anime, FilterOperator op, string val)
+    {
+        var names = anime.AnimeGenres.Select(ag => ag.Genre?.Name ?? "").ToList();
+        return op switch
+        {
+            FilterOperator.NotContains => names.All(n => !n.Contains(val, StringComparison.OrdinalIgnoreCase)),
+            FilterOperator.NotEquals   => names.All(n => !n.Equals(val, StringComparison.OrdinalIgnoreCase)),
+            _                          => names.Any(n => MatchText(n, op, val))
         };
     }
 
