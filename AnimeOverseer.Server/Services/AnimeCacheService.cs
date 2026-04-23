@@ -12,12 +12,16 @@ public class AnimeCacheService : IAnimeDataSource
 
     private readonly AnimeDbContext _db;
     private readonly JikanApiService _jikan;
+    private readonly AniListApiService _aniList;
+    private readonly KitsuApiService _kitsu;
     private readonly ImageCacheService _imageCache;
 
-    public AnimeCacheService(AnimeDbContext db, JikanApiService jikan, ImageCacheService imageCache)
+    public AnimeCacheService(AnimeDbContext db, JikanApiService jikan, AniListApiService aniList, KitsuApiService kitsu, ImageCacheService imageCache)
     {
         _db = db;
         _jikan = jikan;
+        _aniList = aniList;
+        _kitsu = kitsu;
         _imageCache = imageCache;
     }
 
@@ -46,6 +50,8 @@ public class AnimeCacheService : IAnimeDataSource
         var anime = await _jikan.GetByIdAsync(id);
         if (anime == null) return null;
 
+        await EnrichSingleAsync(anime);
+
         if (anime.MALId.HasValue && anime.MALId.Value > 0)
         {
             var existing = await _db.Animes.FirstOrDefaultAsync(a => a.MALId == anime.MALId);
@@ -69,6 +75,69 @@ public class AnimeCacheService : IAnimeDataSource
     }
 
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
+
+    // Returns true when an anime is missing commonly-useful fields worth enriching from secondary sources.
+    private static bool NeedsEnrichment(Anime a) =>
+        string.IsNullOrWhiteSpace(a.Synopsis) ||
+        a.Episodes == null ||
+        a.Rating == null;
+
+    // Copies fields from source into target only where target has no data.
+    private static void EnrichAnimeFields(Anime target, Anime source)
+    {
+        if (string.IsNullOrWhiteSpace(target.Synopsis) && !string.IsNullOrWhiteSpace(source.Synopsis))
+            target.Synopsis = source.Synopsis;
+        if (target.Episodes == null && source.Episodes != null)
+            target.Episodes = source.Episodes;
+        if (target.Rating == null && source.Rating != null)
+            target.Rating = source.Rating;
+        if (string.IsNullOrWhiteSpace(target.OriginalTitle) && !string.IsNullOrWhiteSpace(source.OriginalTitle))
+            target.OriginalTitle = source.OriginalTitle;
+        if (string.IsNullOrWhiteSpace(target.ImageUrl) && !string.IsNullOrWhiteSpace(source.ImageUrl))
+            target.ImageUrl = source.ImageUrl;
+        if ((target.AniListId == null || target.AniListId == 0) && source.AniListId is > 0)
+            target.AniListId = source.AniListId;
+        if ((target.KitsuId == null || target.KitsuId == 0) && source.KitsuId is > 0)
+            target.KitsuId = source.KitsuId;
+    }
+
+    // Enriches a single anime in-place using AniList (by MAL ID) then Kitsu (by title) as fallbacks.
+    private async Task EnrichSingleAsync(Anime anime)
+    {
+        if (!NeedsEnrichment(anime)) return;
+
+        if (anime.MALId is > 0)
+        {
+            try
+            {
+                var aniListData = await _aniList.GetByMalIdAsync(anime.MALId.Value);
+                if (aniListData != null) EnrichAnimeFields(anime, aniListData);
+            }
+            catch { }
+        }
+
+        if (NeedsEnrichment(anime) && !string.IsNullOrWhiteSpace(anime.Title))
+        {
+            try
+            {
+                var kitsuData = await _kitsu.GetByTitleAsync(anime.Title);
+                if (kitsuData != null) EnrichAnimeFields(anime, kitsuData);
+            }
+            catch { }
+        }
+    }
+
+    // Fetches AniList data for all seasons in a year and returns a lookup keyed by MAL ID.
+    private async Task<Dictionary<int, Anime>> FetchAniListByYearAsync(int year)
+    {
+        var tasks = AllSeasons.Select(s => _aniList.GetSeasonAnimes(year, s));
+        var results = await Task.WhenAll(tasks);
+        return results
+            .SelectMany(list => list)
+            .Where(a => a.MALId is > 0)
+            .GroupBy(a => a.MALId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+    }
 
     private async Task<List<Anime>> LoadCachedYear(int year)
     {
@@ -104,6 +173,9 @@ public class AnimeCacheService : IAnimeDataSource
                 await Task.Delay(400);
         }
 
+        // Fetch AniList data for the same year in parallel (no strict rate limit)
+        var aniListByMalId = await FetchAniListByYearAsync(year);
+
         // Ensure Season records exist
         var seasonIds = new Dictionary<string, int>();
         foreach (var (s, _) in seasonAnimes)
@@ -112,7 +184,7 @@ public class AnimeCacheService : IAnimeDataSource
             seasonIds[s] = record.Id;
         }
 
-        // Assign season IDs to each anime
+        // Assign season IDs and enrich from AniList where Jikan data is incomplete
         var allAnimes = seasonAnimes
             .SelectMany(x =>
             {
@@ -120,6 +192,12 @@ public class AnimeCacheService : IAnimeDataSource
                 return x.Animes;
             })
             .ToList();
+
+        foreach (var anime in allAnimes.Where(a => a.MALId is > 0 && NeedsEnrichment(a)))
+        {
+            if (aniListByMalId.TryGetValue(anime.MALId!.Value, out var aniListData))
+                EnrichAnimeFields(anime, aniListData);
+        }
 
         // Download images in parallel
         var imageTasks = allAnimes
@@ -290,6 +368,8 @@ public class AnimeCacheService : IAnimeDataSource
         existing.Status = source.Status;
         existing.StartDate = source.StartDate;
         existing.EndDate = source.EndDate;
+        if (source.AniListId is > 0) existing.AniListId = source.AniListId;
+        if (source.KitsuId is > 0) existing.KitsuId = source.KitsuId;
         existing.CachedAt = DateTime.UtcNow;
     }
 }

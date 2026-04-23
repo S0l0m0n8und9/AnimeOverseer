@@ -65,6 +65,12 @@ public class KitsuApiService : IAnimeDataSource
         return animes;
     }
 
+    public async Task<Anime?> GetByTitleAsync(string title)
+    {
+        var results = await SearchAsync(title);
+        return results.FirstOrDefault();
+    }
+
     public async Task<Anime?> GetByIdAsync(int id)
     {
         try
