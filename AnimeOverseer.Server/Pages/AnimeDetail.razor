@@ -96,6 +96,24 @@
                             }
                         </div>
                     }
+
+                    @if (anime.MALId is > 0 || anime.AniListId is > 0 || anime.KitsuId is > 0)
+                    {
+                        <div class="external-links">
+                            @if (anime.MALId is > 0)
+                            {
+                                <a href="https://myanimelist.net/anime/@anime.MALId" target="_blank" rel="noopener noreferrer" class="external-link mal">MyAnimeList</a>
+                            }
+                            @if (anime.AniListId is > 0)
+                            {
+                                <a href="https://anilist.co/anime/@anime.AniListId" target="_blank" rel="noopener noreferrer" class="external-link anilist">AniList</a>
+                            }
+                            @if (anime.KitsuId is > 0)
+                            {
+                                <a href="https://kitsu.io/anime/@anime.KitsuId" target="_blank" rel="noopener noreferrer" class="external-link kitsu">Kitsu</a>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 

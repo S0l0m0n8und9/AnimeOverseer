@@ -753,6 +753,44 @@ img {
     color: var(--text-secondary);
 }
 
+/* --- External Links --- */
+.external-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 1rem;
+}
+
+.external-link {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+.external-link:hover {
+    opacity: 0.8;
+    text-decoration: none;
+}
+
+.external-link.mal {
+    background: #2e51a2;
+    color: #fff;
+}
+
+.external-link.anilist {
+    background: #02a9ff;
+    color: #fff;
+}
+
+.external-link.kitsu {
+    background: #f75239;
+    color: #fff;
+}
+
 /* --- Synopsis Section --- */
 .synopsis-section {
     padding: 1.5rem 2rem 2rem;

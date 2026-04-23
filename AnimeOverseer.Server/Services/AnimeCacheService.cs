@@ -314,10 +314,13 @@ public class AnimeCacheService : IAnimeDataSource
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Load or create Genre rows
-        var existing = await _db.Genres
+        // Load or create Genre rows — use TryAdd to survive any case-variant duplicates in the DB
+        var existingGenreRows = await _db.Genres
             .Where(g => allNames.Contains(g.Name))
-            .ToDictionaryAsync(g => g.Name, StringComparer.OrdinalIgnoreCase);
+            .ToListAsync();
+        var existing = new Dictionary<string, Genre>(StringComparer.OrdinalIgnoreCase);
+        foreach (var genre in existingGenreRows)
+            existing.TryAdd(genre.Name, genre);
 
         foreach (var name in allNames.Where(n => !existing.ContainsKey(n)))
         {
