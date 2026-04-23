@@ -17,9 +17,23 @@
     }
     else if (anime != null)
     {
-        <button class="btn btn-back" @onclick="goBack">
-            <span>&#x2190;</span> Back to Dashboard
-        </button>
+        <div class="detail-actions">
+            <button class="btn btn-back" @onclick="goBack">
+                <span>&#x2190;</span> Back to Dashboard
+            </button>
+            <button class="btn btn-refresh" @onclick="RefreshAsync" disabled="@isRefreshing">
+                @if (isRefreshing)
+                {
+                    <span class="spinner-small"></span>
+                    <span>Refreshing...</span>
+                }
+                else
+                {
+                    <span>&#x21BB;</span>
+                    <span>Refresh</span>
+                }
+            </button>
+        </div>
 
         <div class="detail-card">
             <div class="detail-header">
@@ -143,6 +157,7 @@
 
     private Anime? anime;
     private bool isLoading = true;
+    private bool isRefreshing = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -157,6 +172,23 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        isRefreshing = true;
+        try
+        {
+            anime = await AnimeDataSource.GetByIdAsync(Id, forceRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing anime details: {ex.Message}");
+        }
+        finally
+        {
+            isRefreshing = false;
         }
     }
 

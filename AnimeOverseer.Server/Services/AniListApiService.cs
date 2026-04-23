@@ -62,7 +62,7 @@ public class AniListApiService : IAnimeDataSource
         return animes;
     }
 
-    public async Task<Anime?> GetByIdAsync(int id)
+    public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
         var query = $@"{{ Media(id: {id}, type: ANIME) {{ {MediaFields} }} }}";
         try

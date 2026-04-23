@@ -53,7 +53,7 @@ public class JikanApiService : IAnimeDataSource
         return animes;
     }
 
-    public async Task<Anime?> GetByIdAsync(int id)
+    public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
         try
         {

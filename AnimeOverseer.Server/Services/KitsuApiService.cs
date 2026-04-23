@@ -71,7 +71,7 @@ public class KitsuApiService : IAnimeDataSource
         return results.FirstOrDefault();
     }
 
-    public async Task<Anime?> GetByIdAsync(int id)
+    public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
         try
         {
@@ -129,8 +129,13 @@ public class KitsuApiService : IAnimeDataSource
             Synopsis = synopsis,
             ImageUrl = coverImage,
             Type = attributes.TryGetProperty("format", out var f) ? f.GetString()?.Replace("_", " ") : null,
-            Episodes = attributes.TryGetProperty("episodeCount", out var ep) && ep.ValueKind != JsonValueKind.Null ? ep.GetInt32() : (int?)null,
-            Rating = attributes.TryGetProperty("averageRating", out var ar) && ar.ValueKind != JsonValueKind.Null ? (decimal?)ar.GetDouble() / 10.0m : null,
+            Episodes = attributes.TryGetProperty("episodeCount", out var ep) && ep.ValueKind != JsonValueKind.Null ? ep.GetInt32() : (int?)null,            
+            Rating = attributes.TryGetProperty("averageRating", out var ar) && ar.ValueKind != JsonValueKind.Null
+                ? double.TryParse(ar.GetString(), System.Globalization.NumberStyles.Any, 
+                                  System.Globalization.CultureInfo.InvariantCulture, out var arVal)
+                    ? (decimal?)((decimal)arVal / 10.0m)
+                    : null
+                : null,
             Status = attributes.TryGetProperty("status", out var st) ? st.GetString()?.Replace("_", " ") : null,
             StartDate = attributes.TryGetProperty("startDate", out var sd) && sd.ValueKind != JsonValueKind.Null
                 ? DateTime.Parse(sd.GetString() ?? "")

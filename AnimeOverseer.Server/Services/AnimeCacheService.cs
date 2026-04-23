@@ -37,15 +37,18 @@ public class AnimeCacheService : IAnimeDataSource
 
     public Task<List<Anime>> SearchAsync(string query) => _jikan.SearchAsync(query);
 
-    public async Task<Anime?> GetByIdAsync(int id)
+    public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
-        var threshold = DateTime.UtcNow.Subtract(DetailCacheTtl);
-        var cached = await _db.Animes
-            .Include(a => a.Season)
-            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
-            .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null && a.CachedAt > threshold);
+        if (!forceRefresh)
+        {
+            var threshold = DateTime.UtcNow.Subtract(DetailCacheTtl);
+            var cached = await _db.Animes
+                .Include(a => a.Season)
+                .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+                .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null && a.CachedAt > threshold);
 
-        if (cached != null) return cached;
+            if (cached != null) return cached;
+        }
 
         var anime = await _jikan.GetByIdAsync(id);
         if (anime == null) return null;
@@ -77,10 +80,10 @@ public class AnimeCacheService : IAnimeDataSource
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
 
     // Returns true when an anime is missing commonly-useful fields worth enriching from secondary sources.
-    private static bool NeedsEnrichment(Anime a) =>
-        string.IsNullOrWhiteSpace(a.Synopsis) ||
-        a.Episodes == null ||
-        a.Rating == null;
+    private static bool NeedsEnrichment(Anime a) => true;
+        //string.IsNullOrWhiteSpace(a.Synopsis) ||
+        //a.Episodes == null ||
+        //a.Rating == null;
 
     // Copies fields from source into target only where target has no data.
     private static void EnrichAnimeFields(Anime target, Anime source)
