@@ -8,7 +8,7 @@ public class AniListApiService : IAnimeDataSource
     private readonly HttpClient _httpClient;
     private const string ApiUrl = "https://graphql.anilist.co";
 
-    private const string MediaFields = @"id idMal title { english native } coverImage { large } description format episodes status averageScore startDate { year month day } genres";
+    private const string MediaFields = @"id idMal title { romaji english native } coverImage { large } description format episodes status averageScore startDate { year month day } genres";
 
     public AniListApiService(HttpClient httpClient)
     {
@@ -115,6 +115,7 @@ public class AniListApiService : IAnimeDataSource
     private static Anime MapFromAniList(JsonElement element)
     {
         var titleObj = element.GetProperty("title");
+        var romajiTitle = titleObj.TryGetProperty("romaji", out var rt) && rt.ValueKind != JsonValueKind.Null ? rt.GetString() : null;
         var englishTitle = titleObj.TryGetProperty("english", out var et) && et.ValueKind != JsonValueKind.Null ? et.GetString() : null;
         var nativeTitle = titleObj.TryGetProperty("native", out var nt) && nt.ValueKind != JsonValueKind.Null ? nt.GetString() : null;
 
@@ -130,8 +131,8 @@ public class AniListApiService : IAnimeDataSource
         {
             AniListId = element.TryGetProperty("id", out var id) && id.ValueKind != JsonValueKind.Null ? id.GetInt32() : null,
             MALId = element.TryGetProperty("idMal", out var malId) && malId.ValueKind != JsonValueKind.Null ? malId.GetInt32() : null,
-            Title = englishTitle ?? nativeTitle ?? "Unknown",
-            OriginalTitle = nativeTitle,
+            Title = englishTitle ?? romajiTitle ?? nativeTitle ?? "Unknown",
+            OriginalTitle = romajiTitle ?? nativeTitle,
             Synopsis = description,
             ImageUrl = element.TryGetProperty("coverImage", out var ci) && ci.TryGetProperty("large", out var large) && large.ValueKind != JsonValueKind.Null ? large.GetString() : null,
             Type = element.TryGetProperty("format", out var f) && f.ValueKind != JsonValueKind.Null ? f.GetString()?.Replace("_", " ") : null,

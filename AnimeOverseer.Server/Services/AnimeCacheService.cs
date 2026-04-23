@@ -127,16 +127,29 @@ public class AnimeCacheService : IAnimeDataSource
         }
     }
 
-    // Fetches AniList data for all seasons in a year and returns a lookup keyed by MAL ID.
-    private async Task<Dictionary<int, Anime>> FetchAniListByYearAsync(int year)
+    // Fetches AniList data for all seasons in a year and returns lookups by MAL ID and by title.
+    private async Task<(Dictionary<int, Anime> ByMalId, Dictionary<string, Anime> ByTitle)> FetchAniListByYearAsync(int year)
     {
         var tasks = AllSeasons.Select(s => _aniList.GetSeasonAnimes(year, s));
         var results = await Task.WhenAll(tasks);
-        return results
-            .SelectMany(list => list)
+        var all = results.SelectMany(r => r).ToList();
+
+        var byMalId = all
             .Where(a => a.MALId is > 0)
             .GroupBy(a => a.MALId!.Value)
             .ToDictionary(g => g.Key, g => g.First());
+
+        // Title lookup covers anime where AniList didn't provide idMal
+        var byTitle = new Dictionary<string, Anime>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in all)
+        {
+            if (!string.IsNullOrWhiteSpace(a.Title))
+                byTitle.TryAdd(a.Title.Trim(), a);
+            if (!string.IsNullOrWhiteSpace(a.OriginalTitle))
+                byTitle.TryAdd(a.OriginalTitle.Trim(), a);
+        }
+
+        return (byMalId, byTitle);
     }
 
     private async Task<List<Anime>> LoadCachedYear(int year)
@@ -174,7 +187,7 @@ public class AnimeCacheService : IAnimeDataSource
         }
 
         // Fetch AniList data for the same year in parallel (no strict rate limit)
-        var aniListByMalId = await FetchAniListByYearAsync(year);
+        var (aniListByMalId, aniListByTitle) = await FetchAniListByYearAsync(year);
 
         // Ensure Season records exist
         var seasonIds = new Dictionary<string, int>();
@@ -193,10 +206,21 @@ public class AnimeCacheService : IAnimeDataSource
             })
             .ToList();
 
-        foreach (var anime in allAnimes.Where(a => a.MALId is > 0 && NeedsEnrichment(a)))
+        foreach (var anime in allAnimes.Where(NeedsEnrichment))
         {
-            if (aniListByMalId.TryGetValue(anime.MALId!.Value, out var aniListData))
-                EnrichAnimeFields(anime, aniListData);
+            Anime? aniListMatch = null;
+
+            if (anime.MALId is > 0)
+                aniListByMalId.TryGetValue(anime.MALId.Value, out aniListMatch);
+
+            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.Title))
+                aniListByTitle.TryGetValue(anime.Title.Trim(), out aniListMatch);
+
+            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.OriginalTitle))
+                aniListByTitle.TryGetValue(anime.OriginalTitle.Trim(), out aniListMatch);
+
+            if (aniListMatch != null)
+                EnrichAnimeFields(anime, aniListMatch);
         }
 
         // Download images in parallel
