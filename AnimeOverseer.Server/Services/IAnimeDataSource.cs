@@ -8,4 +8,5 @@ public interface IAnimeDataSource
     Task<List<Anime>> SearchAsync(string query);
     Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false);
     Task<List<Genre>> GetAllGenresAsync();
+    Task<List<AnimeRelation>> GetAllRelationsAsync(int malId);
 }

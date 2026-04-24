@@ -1,6 +1,14 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace AnimeOverseer.Server.Models;
+
+public class AnimeRelation
+{
+    public string RelationType { get; set; } = string.Empty; // Prequel, Sequel, Side Story, etc.
+    public int MALId { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
 
 public class Anime
 {
@@ -45,6 +53,9 @@ public class Anime
     public List<AnimeGenre> AnimeGenres { get; set; } = new();
 
     public List<Request> Requests { get; set; } = new();
+
+    [NotMapped]
+    public List<AnimeRelation> Relations { get; set; } = new();
 }
 
 public class Genre

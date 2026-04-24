@@ -98,6 +98,8 @@ public class AniListApiService : IAnimeDataSource
         return null;
     }
 
+    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId) => Task.FromResult(new List<AnimeRelation>());
+
     public Task<List<Genre>> GetAllGenresAsync()
     {
         return Task.FromResult(new List<Genre>

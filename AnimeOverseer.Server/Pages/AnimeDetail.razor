@@ -128,6 +128,21 @@
                             }
                         </div>
                     }
+
+                    @if (anime.Season != null && anime.Season.Year > 0)
+                    {
+                        <div class="season-nav">
+                            <span class="season-nav-label">@anime.Season.Year:</span>
+                            @foreach (var s in new[] { "spring", "summer", "fall", "winter" })
+                            {
+                                var isCurrent = string.Equals(s, anime.Season.Name, StringComparison.OrdinalIgnoreCase);
+                                <a href="/?season=@s&year=@anime.Season.Year"
+                                   class="season-nav-link @(isCurrent ? "active" : "")">
+                                    @(char.ToUpper(s[0]) + s[1..])
+                                </a>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -136,6 +151,35 @@
                 <div class="synopsis-section">
                     <h2>Synopsis</h2>
                     <p class="synopsis-text">@anime.Synopsis</p>
+                </div>
+            }
+
+            @if (isLoadingRelations || RelationGroups.Count > 0)
+            {
+                <div class="relations-section">
+                    <h2>Related Anime</h2>
+                    @if (isLoadingRelations)
+                    {
+                        <div class="relations-loading">
+                            <span class="spinner-small"></span>
+                            <span>Finding all related anime...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var group in RelationGroups)
+                        {
+                            <div class="relation-group">
+                                <span class="relation-type">@group.Key</span>
+                                <div class="relation-entries">
+                                    @foreach (var rel in group.Value)
+                                    {
+                                        <a href="/anime/@rel.MALId" class="relation-entry">@rel.Name</a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
                 </div>
             }
         </div>
@@ -158,6 +202,15 @@
     private Anime? anime;
     private bool isLoading = true;
     private bool isRefreshing = false;
+    private bool isLoadingRelations = false;
+
+    private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
+
+    private Dictionary<string, List<AnimeRelation>> RelationGroups => anime?.Relations
+        .GroupBy(r => r.RelationType)
+        .OrderBy(g => Array.IndexOf(RelationOrder, g.Key) is var i && i >= 0 ? i : 99)
+        .ToDictionary(g => g.Key, g => g.ToList())
+        ?? new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -173,6 +226,30 @@
         {
             isLoading = false;
         }
+
+        if (anime?.MALId is > 0)
+            _ = LoadRelationsAsync(anime.MALId.Value);
+    }
+
+    private async Task LoadRelationsAsync(int malId)
+    {
+        isLoadingRelations = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var relations = await AnimeDataSource.GetAllRelationsAsync(malId);
+            if (anime != null)
+                anime.Relations = relations;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading relations: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingRelations = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task RefreshAsync()
@@ -181,6 +258,8 @@
         try
         {
             anime = await AnimeDataSource.GetByIdAsync(Id, forceRefresh: true);
+            if (anime?.MALId is > 0)
+                _ = LoadRelationsAsync(anime.MALId.Value);
         }
         catch (Exception ex)
         {

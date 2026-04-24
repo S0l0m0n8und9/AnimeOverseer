@@ -91,6 +91,8 @@ public class KitsuApiService : IAnimeDataSource
         return null;
     }
 
+    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId) => Task.FromResult(new List<AnimeRelation>());
+
     public Task<List<Genre>> GetAllGenresAsync()
     {
         var genres = new List<Genre>

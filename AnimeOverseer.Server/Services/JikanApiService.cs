@@ -70,6 +70,40 @@ public class JikanApiService : IAnimeDataSource
         return null;
     }
 
+    public async Task<List<AnimeRelation>> GetRelationsAsync(int malId)
+    {
+        var relations = new List<AnimeRelation>();
+        try
+        {
+            var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/anime/{malId}/relations");
+            if (!response.IsSuccessStatusCode) return relations;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data)) return relations;
+
+            foreach (var rel in data.EnumerateArray())
+            {
+                var relType = rel.TryGetProperty("relation", out var rt) ? rt.GetString() ?? "" : "";
+                if (!rel.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array) continue;
+
+                foreach (var entry in entries.EnumerateArray())
+                {
+                    var entryType = entry.TryGetProperty("type", out var et) ? et.GetString() : null;
+                    if (entryType != "anime") continue;
+                    var entryMalId = entry.TryGetProperty("mal_id", out var mid) ? mid.GetInt32() : 0;
+                    var name = entry.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
+                    if (entryMalId > 0)
+                        relations.Add(new AnimeRelation { RelationType = relType, MALId = entryMalId, Name = name });
+                }
+            }
+        }
+        catch { }
+        return relations;
+    }
+
+    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId) => Task.FromResult(new List<AnimeRelation>());
+
     public Task<List<Genre>> GetAllGenresAsync()
     {
         var genres = new List<Genre>

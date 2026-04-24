@@ -786,6 +786,109 @@ img {
     color: var(--text-secondary);
 }
 
+/* --- Related Anime --- */
+.relations-section {
+    padding: 1.5rem 2rem 2rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.relations-section h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.relation-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.relation-type {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    min-width: 110px;
+    padding-top: 5px;
+    flex-shrink: 0;
+}
+
+.relation-entries {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.relation-entry {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--accent-light);
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    text-decoration: none;
+    transition: all var(--transition-fast);
+}
+
+.relations-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.relation-entry:hover {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: var(--accent);
+    color: #fff;
+    text-decoration: none;
+}
+
+/* --- Season Navigation --- */
+.season-nav {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 1rem;
+}
+
+.season-nav-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 2px;
+}
+
+.season-nav-link {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    text-decoration: none;
+    transition: all var(--transition-fast);
+}
+
+.season-nav-link:hover {
+    color: var(--accent-light);
+    background: rgba(139, 92, 246, 0.15);
+    text-decoration: none;
+}
+
+.season-nav-link.active {
+    color: #fff;
+    background: var(--accent);
+    pointer-events: none;
+}
+
 /* --- External Links --- */
 .external-links {
     display: flex;

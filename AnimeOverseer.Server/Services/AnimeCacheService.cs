@@ -57,7 +57,10 @@ public class AnimeCacheService : IAnimeDataSource
 
         if (anime.MALId.HasValue && anime.MALId.Value > 0)
         {
-            var existing = await _db.Animes.FirstOrDefaultAsync(a => a.MALId == anime.MALId);
+            var existing = await _db.Animes
+                .Include(a => a.Season)
+                .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+                .FirstOrDefaultAsync(a => a.MALId == anime.MALId);
             if (existing != null)
             {
                 UpdateAnimeFields(existing, anime);
@@ -78,6 +81,38 @@ public class AnimeCacheService : IAnimeDataSource
     }
 
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
+
+    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId)
+    {
+        const int maxNodes = 25;
+        var visited = new HashSet<int> { rootMalId };
+        var queue = new Queue<int>();
+        var allRelations = new List<AnimeRelation>();
+
+        // Seed queue with root's direct relations
+        var initial = await _jikan.GetRelationsAsync(rootMalId);
+        foreach (var rel in initial.Where(r => visited.Add(r.MALId)))
+        {
+            allRelations.Add(rel);
+            queue.Enqueue(rel.MALId);
+        }
+
+        while (queue.Count > 0 && allRelations.Count < maxNodes)
+        {
+            await Task.Delay(400); // respect Jikan rate limit
+            var malId = queue.Dequeue();
+            var relations = await _jikan.GetRelationsAsync(malId);
+
+            foreach (var rel in relations.Where(r => r.MALId != rootMalId && visited.Add(r.MALId)))
+            {
+                allRelations.Add(rel);
+                if (allRelations.Count < maxNodes)
+                    queue.Enqueue(rel.MALId);
+            }
+        }
+
+        return allRelations;
+    }
 
     // Returns true when an anime is missing commonly-useful fields worth enriching from secondary sources.
     private static bool NeedsEnrichment(Anime a) => true;
