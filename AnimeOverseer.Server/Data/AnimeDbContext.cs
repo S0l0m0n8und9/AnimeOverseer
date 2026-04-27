@@ -15,6 +15,7 @@ public class AnimeDbContext : DbContext
     public DbSet<AnimeGenre> AnimeGenres { get; set; }
     public DbSet<Season> Seasons { get; set; }
     public DbSet<Request> Requests { get; set; }
+    public DbSet<CachedAnimeRelation> CachedAnimeRelations { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

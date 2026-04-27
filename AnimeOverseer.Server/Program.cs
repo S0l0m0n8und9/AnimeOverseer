@@ -69,6 +69,24 @@ using (var scope = app.Services.CreateScope())
     if (!existingColumns.Contains("LocalImagePath"))
         db.Database.ExecuteSqlRaw("ALTER TABLE Animes ADD COLUMN LocalImagePath TEXT");
 
+    using (var cmd = connection.CreateCommand())
+    {
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='CachedAnimeRelations'";
+        var exists = await cmd.ExecuteScalarAsync();
+        if (exists == null)
+        {
+            db.Database.ExecuteSqlRaw(@"CREATE TABLE CachedAnimeRelations (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                RootMalId INTEGER NOT NULL,
+                RelatedMalId INTEGER NOT NULL,
+                RelationType TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                CachedAt TEXT NOT NULL
+            )");
+            db.Database.ExecuteSqlRaw("CREATE INDEX IX_CachedAnimeRelations_RootMalId ON CachedAnimeRelations (RootMalId)");
+        }
+    }
+
     if (!db.Genres.Any())
     {
         var genres = new[] { "Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller" };

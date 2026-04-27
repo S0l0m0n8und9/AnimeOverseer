@@ -1,5 +1,5 @@
 @page "/anime/{id:int}"
-@rendermode InteractiveServer
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
 @inject IAnimeDataSource AnimeDataSource
@@ -231,13 +231,13 @@
             _ = LoadRelationsAsync(anime.MALId.Value);
     }
 
-    private async Task LoadRelationsAsync(int malId)
+    private async Task LoadRelationsAsync(int malId, bool forceRefresh = false)
     {
         isLoadingRelations = true;
         await InvokeAsync(StateHasChanged);
         try
         {
-            var relations = await AnimeDataSource.GetAllRelationsAsync(malId);
+            var relations = await AnimeDataSource.GetAllRelationsAsync(malId, forceRefresh);
             if (anime != null)
                 anime.Relations = relations;
         }
@@ -259,7 +259,7 @@
         {
             anime = await AnimeDataSource.GetByIdAsync(Id, forceRefresh: true);
             if (anime?.MALId is > 0)
-                _ = LoadRelationsAsync(anime.MALId.Value);
+                _ = LoadRelationsAsync(anime.MALId.Value, forceRefresh: true);
         }
         catch (Exception ex)
         {

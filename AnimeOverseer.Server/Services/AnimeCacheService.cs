@@ -9,6 +9,7 @@ public class AnimeCacheService : IAnimeDataSource
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
     private static readonly TimeSpan SeasonCacheTtl = TimeSpan.FromHours(12);
     private static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(24);
+    private static readonly TimeSpan RelationCacheTtl = TimeSpan.FromDays(7);
 
     private readonly AnimeDbContext _db;
     private readonly JikanApiService _jikan;
@@ -82,14 +83,45 @@ public class AnimeCacheService : IAnimeDataSource
 
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
 
-    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId)
+    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId, bool forceRefresh = false)
+    {
+        if (!forceRefresh)
+        {
+            var threshold = DateTime.UtcNow.Subtract(RelationCacheTtl);
+            var cached = await _db.CachedAnimeRelations
+                .Where(r => r.RootMalId == rootMalId && r.CachedAt > threshold)
+                .ToListAsync();
+
+            if (cached.Count > 0)
+                return cached.Select(r => new AnimeRelation { RelationType = r.RelationType, MALId = r.RelatedMalId, Name = r.Name }).ToList();
+        }
+
+        var allRelations = await FetchRelationsBfsAsync(rootMalId);
+
+        var stale = await _db.CachedAnimeRelations.Where(r => r.RootMalId == rootMalId).ToListAsync();
+        _db.CachedAnimeRelations.RemoveRange(stale);
+
+        var now = DateTime.UtcNow;
+        _db.CachedAnimeRelations.AddRange(allRelations.Select(r => new CachedAnimeRelation
+        {
+            RootMalId = rootMalId,
+            RelatedMalId = r.MALId,
+            RelationType = r.RelationType,
+            Name = r.Name,
+            CachedAt = now
+        }));
+        await _db.SaveChangesAsync();
+
+        return allRelations;
+    }
+
+    private async Task<List<AnimeRelation>> FetchRelationsBfsAsync(int rootMalId)
     {
         const int maxNodes = 25;
         var visited = new HashSet<int> { rootMalId };
         var queue = new Queue<int>();
         var allRelations = new List<AnimeRelation>();
 
-        // Seed queue with root's direct relations
         var initial = await _jikan.GetRelationsAsync(rootMalId);
         foreach (var rel in initial.Where(r => visited.Add(r.MALId)))
         {

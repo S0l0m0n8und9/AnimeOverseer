@@ -102,7 +102,7 @@ public class JikanApiService : IAnimeDataSource
         return relations;
     }
 
-    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId) => Task.FromResult(new List<AnimeRelation>());
+    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId, bool forceRefresh = false) => Task.FromResult(new List<AnimeRelation>());
 
     public Task<List<Genre>> GetAllGenresAsync()
     {
