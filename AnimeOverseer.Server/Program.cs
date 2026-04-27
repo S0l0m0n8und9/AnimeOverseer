@@ -133,6 +133,23 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    using (var cmd = connection.CreateCommand())
+    {
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='SyncJobLogs'";
+        if (await cmd.ExecuteScalarAsync() == null)
+        {
+            db.Database.ExecuteSqlRaw(@"CREATE TABLE SyncJobLogs (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                SyncJobId INTEGER NOT NULL,
+                Timestamp TEXT NOT NULL,
+                Level TEXT NOT NULL DEFAULT 'Info',
+                Message TEXT NOT NULL,
+                FOREIGN KEY (SyncJobId) REFERENCES SyncJobs(Id) ON DELETE CASCADE
+            )");
+            db.Database.ExecuteSqlRaw("CREATE INDEX IX_SyncJobLogs_SyncJobId ON SyncJobLogs (SyncJobId)");
+        }
+    }
+
     // Ensure image cache directory exists
     var env = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
     Directory.CreateDirectory(Path.Combine(env.WebRootPath, "images", "cache"));

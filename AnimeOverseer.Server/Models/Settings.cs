@@ -7,6 +7,15 @@ public class AppSetting
     public string? Value { get; set; }
 }
 
+public class SyncJobLog
+{
+    public int Id { get; set; }
+    public int SyncJobId { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string Level { get; set; } = "Info";    // Info, Success, Warning, Error
+    public string Message { get; set; } = string.Empty;
+}
+
 public class SyncJob
 {
     public int Id { get; set; }

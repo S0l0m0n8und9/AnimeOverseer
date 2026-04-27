@@ -1,0 +1,193 @@
+@page "/jobs/{Id:int}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using AnimeOverseer.Server.Models
+@using AnimeOverseer.Server.Services
+@inject SyncJobService SyncJobService
+@inject NavigationManager NavManager
+@implements IDisposable
+
+<PageTitle>Job #@Id - AnimeOverseer</PageTitle>
+
+<div style="max-width:800px;margin:0 auto;padding:1.5rem">
+
+    <a href="/settings" style="color:#888;text-decoration:none;font-size:.9em">← Back to Settings</a>
+
+    @if (_job == null && !_notFound)
+    {
+        <div class="loading-container" style="margin-top:2rem">
+            <div class="spinner"></div>
+            <p>Loading…</p>
+        </div>
+    }
+    else if (_notFound)
+    {
+        <div class="empty-state" style="margin-top:2rem">
+            <span class="empty-icon">&#x2753;</span>
+            <h3>Job not found</h3>
+            <p>Job #@Id does not exist.</p>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div style="margin-top:1.25rem;margin-bottom:1.5rem">
+            <div style="display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap">
+                <h2 style="margin:0">Job #@_job!.Id — @_job.JobType Sync</h2>
+                @StatusBadge(_job.Status)
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.5rem 1.5rem;margin-top:1rem;font-size:.9em;color:#ccc">
+                <div><span style="color:#888">Queued</span><br/>@FormatDateTime(_job.QueuedAt)</div>
+                @if (_job.StartedAt != null)
+                {
+                    <div><span style="color:#888">Started</span><br/>@FormatDateTime(_job.StartedAt.Value)</div>
+                }
+                @if (_job.FinishedAt != null)
+                {
+                    <div><span style="color:#888">Finished</span><br/>@FormatDateTime(_job.FinishedAt.Value)</div>
+                }
+                <div><span style="color:#888">Duration</span><br/>@FormatDuration(_job)</div>
+                @if (_job.TotalCount > 0)
+                {
+                    <div><span style="color:#888">Progress</span><br/>@_job.ProcessedCount.ToString("N0") / @_job.TotalCount.ToString("N0")</div>
+                }
+            </div>
+
+            @if (_job.TotalCount > 0)
+            {
+                var pct = _job.ProcessedCount * 100 / _job.TotalCount;
+                <div style="margin-top:.75rem;background:#333;height:8px;border-radius:4px;overflow:hidden">
+                    <div style="background:#0d6efd;height:100%;width:@(pct)%;transition:width .5s"></div>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_job.Message))
+            {
+                <div style="margin-top:.5rem;font-size:.85em;color:#aaa">@_job.Message</div>
+            }
+        </div>
+
+        <hr style="border-color:#333;margin-bottom:1.25rem" />
+
+        <!-- Activity feed -->
+        <h3 style="margin-top:0;margin-bottom:.75rem;font-size:1rem;color:#ccc">Activity</h3>
+
+        @if (_logs.Count == 0)
+        {
+            <p style="color:#888;font-size:.9em">No activity yet.</p>
+        }
+        else
+        {
+            <div style="display:flex;flex-direction:column;gap:0">
+                @foreach (var log in _logs)
+                {
+                    var (dot, color) = log.Level switch
+                    {
+                        "Success" => ("✓", "#198754"),
+                        "Warning" => ("⚠", "#ffc107"),
+                        "Error"   => ("✗", "#dc3545"),
+                        _         => ("·", "#6c757d")
+                    };
+                    <div style="display:flex;gap:.75rem;padding:.35rem 0;border-bottom:1px solid #1e1e1e;align-items:baseline">
+                        <span style="color:@color;font-size:1em;min-width:1rem;text-align:center;flex-shrink:0">@dot</span>
+                        <span style="color:#555;font-size:.78em;white-space:nowrap;flex-shrink:0;padding-top:1px">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                        <span style="font-size:.9em;color:#ddd">@log.Message</span>
+                    </div>
+                }
+
+                @if (_job.Status is "Queued" or "Running")
+                {
+                    <div style="display:flex;gap:.75rem;padding:.5rem 0;align-items:center">
+                        <div class="spinner" style="width:12px;height:12px;border-width:2px"></div>
+                        <span style="font-size:.85em;color:#888">Running…</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SyncJob? _job;
+    private List<SyncJobLog> _logs = new();
+    private bool _notFound = false;
+    private CancellationTokenSource _cts = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await RefreshAsync();
+        StateHasChanged();
+        if (_job?.Status is "Queued" or "Running")
+            StartPolling();
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private void StartPolling()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        _ = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(2000, ct);
+            if (ct.IsCancellationRequested) break;
+
+            var stillActive = false;
+            await InvokeAsync(async () =>
+            {
+                await RefreshAsync();
+                stillActive = _job?.Status is "Queued" or "Running";
+                StateHasChanged();
+            });
+
+            if (!stillActive) break;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _job = await SyncJobService.GetByIdAsync(Id);
+        if (_job == null) { _notFound = true; return; }
+        _logs = await SyncJobService.GetLogsAsync(Id);
+    }
+
+    private static string FormatDateTime(DateTime dt)
+        => dt.ToLocalTime().ToString("MMM d, HH:mm:ss");
+
+    private static string FormatDuration(SyncJob job)
+    {
+        if (job.StartedAt == null) return "—";
+        var span = (job.FinishedAt ?? DateTime.UtcNow) - job.StartedAt.Value;
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m {span.Seconds}s";
+        if (span.TotalMinutes >= 1) return $"{span.Minutes}m {span.Seconds}s";
+        return $"{span.Seconds}s";
+    }
+
+    private static RenderFragment StatusBadge(string status) => builder =>
+    {
+        var (bg, label) = status switch
+        {
+            "Queued"    => ("#6c757d", "Queued"),
+            "Running"   => ("#0d6efd", "Running"),
+            "Completed" => ("#198754", "Completed"),
+            _           => ("#dc3545", "Failed")
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "style", $"background:{bg};color:#fff;padding:.2rem .55rem;border-radius:4px;font-size:.8em;vertical-align:middle");
+        builder.AddContent(2, label);
+        builder.CloseElement();
+    };
+}

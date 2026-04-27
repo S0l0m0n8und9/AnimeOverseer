@@ -8,27 +8,40 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
 {
     private static readonly string[] Seasons = ["spring", "summer", "fall", "winter"];
 
-    // Triggers the existing season sync pipeline (Jikan fetch + AniList enrichment) for the current year.
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
         var year = DateTime.UtcNow.Year;
         job.TotalCount = Seasons.Length;
+        Log(job, $"Sync started — fetching {Seasons.Length} seasons for {year}");
         await db.SaveChangesAsync(ct);
 
         foreach (var season in Seasons)
         {
             if (ct.IsCancellationRequested) break;
-            await dataSource.GetSeasonAnimes(year, season, forceRefresh: true);
-            // AnimeCacheService already committed all season data; clear its accumulated
-            // tracked entities so SaveChanges below only processes the job update.
+
+            Log(job, $"Fetching {season} {year} from Jikan…");
+            await db.SaveChangesAsync(ct); // persist "Fetching" entry before the slow API call
+
+            var animes = await dataSource.GetSeasonAnimes(year, season, forceRefresh: true);
+
+            // AnimeCacheService already committed all season data; clear accumulated
+            // tracked entities so only the job update and log entry are saved below.
             db.ChangeTracker.Clear();
             job.ProcessedCount++;
             db.SyncJobs.Update(job);
+            Log(job, $"Completed {season} {year} — {animes.Count} anime cached", "Success");
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (!ct.IsCancellationRequested)
+        {
+            db.ChangeTracker.Clear();
+            db.SyncJobs.Update(job);
+            Log(job, $"Sync complete — {job.ProcessedCount} of {job.TotalCount} seasons processed", "Success");
             await db.SaveChangesAsync(ct);
         }
     }
 
-    // Re-enriches all DB anime that have a MAL ID by fetching fresh data from AniList.
     public async Task RunAniListSyncAsync(SyncJob job, CancellationToken ct)
     {
         var animes = await db.Animes
@@ -37,8 +50,10 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
             .ToListAsync(ct);
 
         job.TotalCount = animes.Count;
+        Log(job, $"Starting AniList enrichment — {animes.Count:N0} anime with MAL IDs");
         await db.SaveChangesAsync(ct);
 
+        int errors = 0;
         foreach (var anime in animes)
         {
             if (ct.IsCancellationRequested) break;
@@ -47,9 +62,13 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
                 var data = await aniList.GetByMalIdAsync(anime.MALId!.Value);
                 if (data != null) EnrichFields(anime, data);
             }
-            catch { }
+            catch { errors++; }
 
             job.ProcessedCount++;
+
+            if (job.ProcessedCount % 100 == 0)
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
+
             if (job.ProcessedCount % 20 == 0)
                 await db.SaveChangesAsync(ct);
 
@@ -57,9 +76,14 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
         }
 
         await db.SaveChangesAsync(ct);
+
+        var summary = errors > 0
+            ? $"Sync complete — {job.ProcessedCount:N0} processed, {errors} errors"
+            : $"Sync complete — {job.ProcessedCount:N0} processed";
+        Log(job, summary, errors > 0 ? "Warning" : "Success");
+        await db.SaveChangesAsync(ct);
     }
 
-    // Fills in missing Kitsu data for anime that don't yet have a KitsuId.
     public async Task RunKitsuSyncAsync(SyncJob job, CancellationToken ct)
     {
         var animes = await db.Animes
@@ -68,8 +92,10 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
             .ToListAsync(ct);
 
         job.TotalCount = animes.Count;
+        Log(job, $"Starting Kitsu enrichment — {animes.Count:N0} anime without Kitsu data");
         await db.SaveChangesAsync(ct);
 
+        int errors = 0;
         foreach (var anime in animes)
         {
             if (ct.IsCancellationRequested) break;
@@ -78,9 +104,13 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
                 var data = await kitsu.GetByTitleAsync(anime.Title);
                 if (data != null) EnrichFields(anime, data);
             }
-            catch { }
+            catch { errors++; }
 
             job.ProcessedCount++;
+
+            if (job.ProcessedCount % 100 == 0)
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
+
             if (job.ProcessedCount % 50 == 0)
                 await db.SaveChangesAsync(ct);
 
@@ -88,6 +118,24 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
         }
 
         await db.SaveChangesAsync(ct);
+
+        var summary = errors > 0
+            ? $"Sync complete — {job.ProcessedCount:N0} processed, {errors} errors"
+            : $"Sync complete — {job.ProcessedCount:N0} processed";
+        Log(job, summary, errors > 0 ? "Warning" : "Success");
+        await db.SaveChangesAsync(ct);
+    }
+
+    // Queues a log entry to be saved with the next SaveChangesAsync call.
+    private void Log(SyncJob job, string message, string level = "Info")
+    {
+        db.SyncJobLogs.Add(new SyncJobLog
+        {
+            SyncJobId = job.Id,
+            Timestamp = DateTime.UtcNow,
+            Level = level,
+            Message = message
+        });
     }
 
     private static void EnrichFields(Anime target, Anime source)

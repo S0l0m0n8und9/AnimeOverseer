@@ -18,6 +18,7 @@ public class AnimeDbContext : DbContext
     public DbSet<CachedAnimeRelation> CachedAnimeRelations { get; set; }
     public DbSet<AppSetting> AppSettings { get; set; }
     public DbSet<SyncJob> SyncJobs { get; set; }
+    public DbSet<SyncJobLog> SyncJobLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

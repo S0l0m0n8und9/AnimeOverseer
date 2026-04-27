@@ -82,7 +82,7 @@
                 @foreach (var job in _jobs)
                 {
                     <tr style="border-bottom:1px solid #222">
-                        <td style="padding:.4rem .6rem">@job.JobType</td>
+                        <td style="padding:.4rem .6rem"><a href="/jobs/@job.Id" style="color:#90caf9;text-decoration:none">@job.JobType #@job.Id</a></td>
                         <td style="padding:.4rem .6rem">@StatusBadge(job.Status)</td>
                         <td style="padding:.4rem .6rem;color:#888;font-size:.85em">@FormatAgo(job.QueuedAt)</td>
                         <td style="padding:.4rem .6rem;color:#888;font-size:.85em">@FormatDuration(job)</td>

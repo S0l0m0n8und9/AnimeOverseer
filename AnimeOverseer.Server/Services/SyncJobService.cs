@@ -23,4 +23,14 @@ public class SyncJobService(AnimeDbContext db)
             .OrderByDescending(j => j.QueuedAt)
             .Take(count)
             .ToListAsync();
+
+    public async Task<SyncJob?> GetByIdAsync(int id)
+        => await db.SyncJobs.FindAsync(id);
+
+    public async Task<List<SyncJobLog>> GetLogsAsync(int jobId)
+        => await db.SyncJobLogs
+            .Where(l => l.SyncJobId == jobId)
+            .OrderBy(l => l.Timestamp)
+            .ThenBy(l => l.Id)
+            .ToListAsync();
 }
