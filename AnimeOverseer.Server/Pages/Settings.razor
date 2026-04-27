@@ -1,0 +1,453 @@
+@page "/settings"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using AnimeOverseer.Server.Models
+@using AnimeOverseer.Server.Services
+@inject SettingsService SettingsService
+@inject SyncJobService SyncJobService
+@inject IHttpClientFactory HttpClientFactory
+@implements IDisposable
+
+<PageTitle>Settings - AnimeOverseer</PageTitle>
+
+<div class="settings-page" style="max-width:900px;margin:0 auto;padding:1.5rem">
+
+    <!-- ══ Data Sources ══════════════════════════════════════════════════ -->
+    <h2 style="margin-top:0">Data Sources</h2>
+
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
+        @foreach (var src in new[] { ("Jikan", "MyAnimeList via Jikan"), ("AniList", "AniList"), ("Kitsu", "Kitsu") })
+        {
+            var (type, label) = src;
+            var active = IsActive(type);
+            var last = LastJob(type);
+            <div style="border:1px solid #333;border-radius:8px;padding:1rem;min-width:220px;flex:1">
+                <div style="font-weight:600;margin-bottom:.5rem">@label</div>
+                @if (active != null)
+                {
+                    <div style="margin-bottom:.5rem">
+                        @StatusBadge(active.Status)
+                        @if (active.TotalCount > 0)
+                        {
+                            <span style="margin-left:.5rem;font-size:.85em">@active.ProcessedCount / @active.TotalCount</span>
+                        }
+                    </div>
+                    @if (active.TotalCount > 0)
+                    {
+                        var pct = active.ProcessedCount * 100 / active.TotalCount;
+                        <div style="background:#333;height:6px;border-radius:3px;overflow:hidden;margin-bottom:.5rem">
+                            <div style="background:#0d6efd;height:100%;width:@(pct)%;transition:width .3s"></div>
+                        </div>
+                    }
+                }
+                else if (last != null)
+                {
+                    <div style="font-size:.8em;color:#888;margin-bottom:.5rem">
+                        Last: @StatusBadge(last.Status) @FormatAgo(last.FinishedAt ?? last.QueuedAt)
+                    </div>
+                }
+                else
+                {
+                    <div style="font-size:.8em;color:#888;margin-bottom:.5rem">Never run</div>
+                }
+                <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem"
+                        @onclick="() => TriggerSync(type)"
+                        disabled="@(active != null || _triggering)">
+                    Sync Now
+                </button>
+            </div>
+        }
+    </div>
+
+    <!-- ══ Job History ═══════════════════════════════════════════════════ -->
+    <h2>Job History</h2>
+
+    @if (_jobs.Count == 0)
+    {
+        <p style="color:#888">No jobs run yet.</p>
+    }
+    else
+    {
+        <table style="width:100%;border-collapse:collapse;font-size:.9em;margin-bottom:2rem">
+            <thead>
+                <tr style="border-bottom:1px solid #333;text-align:left">
+                    <th style="padding:.4rem .6rem">Type</th>
+                    <th style="padding:.4rem .6rem">Status</th>
+                    <th style="padding:.4rem .6rem">Queued</th>
+                    <th style="padding:.4rem .6rem">Duration</th>
+                    <th style="padding:.4rem .6rem">Progress</th>
+                    <th style="padding:.4rem .6rem">Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in _jobs)
+                {
+                    <tr style="border-bottom:1px solid #222">
+                        <td style="padding:.4rem .6rem">@job.JobType</td>
+                        <td style="padding:.4rem .6rem">@StatusBadge(job.Status)</td>
+                        <td style="padding:.4rem .6rem;color:#888;font-size:.85em">@FormatAgo(job.QueuedAt)</td>
+                        <td style="padding:.4rem .6rem;color:#888;font-size:.85em">@FormatDuration(job)</td>
+                        <td style="padding:.4rem .6rem;min-width:120px">
+                            @if (job.TotalCount > 0)
+                            {
+                                var pct = job.ProcessedCount * 100 / job.TotalCount;
+                                <div style="background:#333;height:5px;border-radius:3px;overflow:hidden;margin-bottom:2px">
+                                    <div style="background:#0d6efd;height:100%;width:@(pct)%"></div>
+                                </div>
+                                <span style="font-size:.8em;color:#888">@job.ProcessedCount / @job.TotalCount</span>
+                            }
+                        </td>
+                        <td style="padding:.4rem .6rem;color:#888;font-size:.85em">@job.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <!-- ══ Media Servers ════════════════════════════════════════════════ -->
+    <h2>Media Servers</h2>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:1.5rem;margin-bottom:2rem">
+
+        @* Sonarr *@
+        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+            <h3 style="margin-top:0;font-size:1.1rem">Sonarr</h3>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">URL</label>
+                <input class="form-input" style="width:100%" @bind="_sonarrUrl" placeholder="http://sonarr:8989" />
+            </div>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
+                <input class="form-input" style="width:100%" @bind="_sonarrKey" type="password" placeholder="••••••••" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SaveSonarr" style="font-size:.85em">Save</button>
+                <button class="btn btn-secondary" @onclick="TestSonarr" disabled="@_sonarrTesting" style="font-size:.85em">
+                    @(_sonarrTesting ? "Testing…" : "Test Connection")
+                </button>
+                @TestResultBadge(_sonarrResult)
+            </div>
+        </div>
+
+        @* Radarr *@
+        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+            <h3 style="margin-top:0;font-size:1.1rem">Radarr</h3>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">URL</label>
+                <input class="form-input" style="width:100%" @bind="_radarrUrl" placeholder="http://radarr:7878" />
+            </div>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
+                <input class="form-input" style="width:100%" @bind="_radarrKey" type="password" placeholder="••••••••" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SaveRadarr" style="font-size:.85em">Save</button>
+                <button class="btn btn-secondary" @onclick="TestRadarr" disabled="@_radarrTesting" style="font-size:.85em">
+                    @(_radarrTesting ? "Testing…" : "Test Connection")
+                </button>
+                @TestResultBadge(_radarrResult)
+            </div>
+        </div>
+
+        @* Plex *@
+        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+            <h3 style="margin-top:0;font-size:1.1rem">Plex</h3>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
+                <input class="form-input" style="width:100%" @bind="_plexUrl" placeholder="http://plex:32400" />
+            </div>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Token</label>
+                <input class="form-input" style="width:100%" @bind="_plexToken" type="password" placeholder="••••••••" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SavePlex" style="font-size:.85em">Save</button>
+                <button class="btn btn-secondary" @onclick="TestPlex" disabled="@_plexTesting" style="font-size:.85em">
+                    @(_plexTesting ? "Testing…" : "Test Connection")
+                </button>
+                @TestResultBadge(_plexResult)
+            </div>
+        </div>
+
+        @* Jellyfin *@
+        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+            <h3 style="margin-top:0;font-size:1.1rem">Jellyfin</h3>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
+                <input class="form-input" style="width:100%" @bind="_jellyfinUrl" placeholder="http://jellyfin:8096" />
+            </div>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
+                <input class="form-input" style="width:100%" @bind="_jellyfinKey" type="password" placeholder="••••••••" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SaveJellyfin" style="font-size:.85em">Save</button>
+                <button class="btn btn-secondary" @onclick="TestJellyfin" disabled="@_jellyfinTesting" style="font-size:.85em">
+                    @(_jellyfinTesting ? "Testing…" : "Test Connection")
+                </button>
+                @TestResultBadge(_jellyfinResult)
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    // ── State ─────────────────────────────────────────────────────────────
+
+    private List<SyncJob> _jobs = new();
+    private bool _triggering = false;
+    private CancellationTokenSource _cts = new();
+
+    private string _sonarrUrl = "", _sonarrKey = "";
+    private string _radarrUrl = "", _radarrKey = "";
+    private string _plexUrl = "", _plexToken = "";
+    private string _jellyfinUrl = "", _jellyfinKey = "";
+
+    private bool _sonarrTesting, _radarrTesting, _plexTesting, _jellyfinTesting;
+    private (bool Ok, string Msg)? _sonarrResult, _radarrResult, _plexResult, _jellyfinResult;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync());
+        StateHasChanged();
+        StartPolling();
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    // ── Polling ────────────────────────────────────────────────────────────
+
+    private void StartPolling()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        _ = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(3000, ct);
+            if (ct.IsCancellationRequested) break;
+            await LoadJobsAsync();
+            await InvokeAsync(StateHasChanged);
+            if (!_jobs.Any(j => j.Status is "Queued" or "Running"))
+                break;
+        }
+    }
+
+    // ── Data ───────────────────────────────────────────────────────────────
+
+    private async Task LoadJobsAsync()
+    {
+        _jobs = await SyncJobService.GetRecentAsync();
+    }
+
+    private async Task LoadSettingsAsync()
+    {
+        _sonarrUrl   = await SettingsService.GetAsync("sonarr.url")    ?? "";
+        _sonarrKey   = await SettingsService.GetAsync("sonarr.apikey") ?? "";
+        _radarrUrl   = await SettingsService.GetAsync("radarr.url")    ?? "";
+        _radarrKey   = await SettingsService.GetAsync("radarr.apikey") ?? "";
+        _plexUrl     = await SettingsService.GetAsync("plex.url")      ?? "";
+        _plexToken   = await SettingsService.GetAsync("plex.token")    ?? "";
+        _jellyfinUrl = await SettingsService.GetAsync("jellyfin.url")  ?? "";
+        _jellyfinKey = await SettingsService.GetAsync("jellyfin.apikey") ?? "";
+    }
+
+    // ── Sync triggers ─────────────────────────────────────────────────────
+
+    private async Task TriggerSync(string jobType)
+    {
+        _triggering = true;
+        try
+        {
+            await SyncJobService.QueueAsync(jobType);
+            await LoadJobsAsync();
+            StartPolling();
+        }
+        finally { _triggering = false; }
+    }
+
+    // ── Settings save ─────────────────────────────────────────────────────
+
+    private async Task SaveSonarr()
+    {
+        await SettingsService.SetAsync("sonarr.url", _sonarrUrl.Trim());
+        await SettingsService.SetAsync("sonarr.apikey", _sonarrKey.Trim());
+        _sonarrResult = (true, "Saved");
+    }
+
+    private async Task SaveRadarr()
+    {
+        await SettingsService.SetAsync("radarr.url", _radarrUrl.Trim());
+        await SettingsService.SetAsync("radarr.apikey", _radarrKey.Trim());
+        _radarrResult = (true, "Saved");
+    }
+
+    private async Task SavePlex()
+    {
+        await SettingsService.SetAsync("plex.url", _plexUrl.Trim());
+        await SettingsService.SetAsync("plex.token", _plexToken.Trim());
+        _plexResult = (true, "Saved");
+    }
+
+    private async Task SaveJellyfin()
+    {
+        await SettingsService.SetAsync("jellyfin.url", _jellyfinUrl.Trim());
+        await SettingsService.SetAsync("jellyfin.apikey", _jellyfinKey.Trim());
+        _jellyfinResult = (true, "Saved");
+    }
+
+    // ── Connection tests ──────────────────────────────────────────────────
+
+    private async Task TestSonarr()
+    {
+        _sonarrTesting = true; _sonarrResult = null;
+        _sonarrResult = await TestArrAsync(NormalizeUrl(_sonarrUrl), _sonarrKey, "Sonarr");
+        _sonarrTesting = false;
+    }
+
+    private async Task TestRadarr()
+    {
+        _radarrTesting = true; _radarrResult = null;
+        _radarrResult = await TestArrAsync(NormalizeUrl(_radarrUrl), _radarrKey, "Radarr");
+        _radarrTesting = false;
+    }
+
+    private async Task TestPlex()
+    {
+        _plexTesting = true; _plexResult = null;
+        _plexResult = await TestPlexAsync(NormalizeUrl(_plexUrl), _plexToken);
+        _plexTesting = false;
+    }
+
+    private async Task TestJellyfin()
+    {
+        _jellyfinTesting = true; _jellyfinResult = null;
+        _jellyfinResult = await TestJellyfinAsync(NormalizeUrl(_jellyfinUrl), _jellyfinKey);
+        _jellyfinTesting = false;
+    }
+
+    private async Task<(bool Ok, string Msg)> TestArrAsync(string url, string apiKey, string name)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return (false, "URL is required");
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{url}/api/v3/system/status");
+            req.Headers.Add("X-Api-Key", apiKey);
+            var res = await client.SendAsync(req);
+            return res.IsSuccessStatusCode
+                ? (true, "Connected")
+                : (false, $"HTTP {(int)res.StatusCode}");
+        }
+        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+    }
+
+    private async Task<(bool Ok, string Msg)> TestPlexAsync(string url, string token)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return (false, "URL is required");
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            var testUrl = string.IsNullOrWhiteSpace(token)
+                ? $"{url}/identity"
+                : $"{url}/identity?X-Plex-Token={Uri.EscapeDataString(token)}";
+            var res = await client.GetAsync(testUrl);
+            return res.IsSuccessStatusCode
+                ? (true, "Connected")
+                : (false, $"HTTP {(int)res.StatusCode}");
+        }
+        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+    }
+
+    private async Task<(bool Ok, string Msg)> TestJellyfinAsync(string url, string apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return (false, "URL is required");
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{url}/System/Info/Public");
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                req.Headers.Add("X-MediaBrowser-Token", apiKey);
+            var res = await client.SendAsync(req);
+            return res.IsSuccessStatusCode
+                ? (true, "Connected")
+                : (false, $"HTTP {(int)res.StatusCode}");
+        }
+        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private SyncJob? IsActive(string type)
+        => _jobs.FirstOrDefault(j => j.JobType == type && j.Status is "Queued" or "Running");
+
+    private SyncJob? LastJob(string type)
+        => _jobs.FirstOrDefault(j => j.JobType == type && j.Status is "Completed" or "Failed");
+
+    private static string NormalizeUrl(string url)
+    {
+        url = url.Trim().TrimEnd('/');
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            url = "http://" + url;
+        return url;
+    }
+
+    private static string FormatAgo(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalSeconds < 60) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        return $"{(int)diff.TotalDays}d ago";
+    }
+
+    private static string FormatDuration(SyncJob job)
+    {
+        if (job.StartedAt == null) return "—";
+        var end = job.FinishedAt ?? DateTime.UtcNow;
+        var span = end - job.StartedAt.Value;
+        return span.TotalMinutes >= 1
+            ? $"{(int)span.TotalMinutes}m {span.Seconds}s"
+            : $"{span.Seconds}s";
+    }
+
+    private static RenderFragment StatusBadge(string status) => builder =>
+    {
+        var (bg, label) = status switch
+        {
+            "Queued"    => ("#6c757d", "Queued"),
+            "Running"   => ("#0d6efd", "Running"),
+            "Completed" => ("#198754", "Completed"),
+            _           => ("#dc3545", "Failed")
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "style", $"background:{bg};color:#fff;padding:.15rem .45rem;border-radius:4px;font-size:.8em");
+        builder.AddContent(2, label);
+        builder.CloseElement();
+    };
+
+    private static RenderFragment TestResultBadge((bool Ok, string Msg)? result) => builder =>
+    {
+        if (result == null) return;
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "style", $"color:{(result.Value.Ok ? "#198754" : "#dc3545")};font-size:.85em");
+        builder.AddContent(2, (result.Value.Ok ? "✓ " : "✗ ") + result.Value.Msg);
+        builder.CloseElement();
+    };
+}

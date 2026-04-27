@@ -31,7 +31,11 @@ builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<IAnimeDataSource, AnimeCacheService>();
 builder.Services.AddSingleton<ImageCacheService>();
+builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<SyncJobService>();
+builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<AnimeRefreshBackgroundService>();
+builder.Services.AddHostedService<SyncJobRunnerService>();
 
 var app = builder.Build();
 
@@ -93,6 +97,40 @@ using (var scope = app.Services.CreateScope())
         foreach (var name in genres)
             db.Genres.Add(new Genre { Name = name });
         await db.SaveChangesAsync();
+    }
+
+    using (var cmd = connection.CreateCommand())
+    {
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='AppSettings'";
+        if (await cmd.ExecuteScalarAsync() == null)
+        {
+            db.Database.ExecuteSqlRaw(@"CREATE TABLE AppSettings (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Key TEXT NOT NULL,
+                Value TEXT
+            )");
+            db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IX_AppSettings_Key ON AppSettings (Key)");
+        }
+    }
+
+    using (var cmd = connection.CreateCommand())
+    {
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='SyncJobs'";
+        if (await cmd.ExecuteScalarAsync() == null)
+        {
+            db.Database.ExecuteSqlRaw(@"CREATE TABLE SyncJobs (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                JobType TEXT NOT NULL,
+                Status TEXT NOT NULL DEFAULT 'Queued',
+                QueuedAt TEXT NOT NULL,
+                StartedAt TEXT,
+                FinishedAt TEXT,
+                ProcessedCount INTEGER NOT NULL DEFAULT 0,
+                TotalCount INTEGER NOT NULL DEFAULT 0,
+                Message TEXT
+            )");
+            db.Database.ExecuteSqlRaw("CREATE INDEX IX_SyncJobs_Status ON SyncJobs (Status)");
+        }
     }
 
     // Ensure image cache directory exists

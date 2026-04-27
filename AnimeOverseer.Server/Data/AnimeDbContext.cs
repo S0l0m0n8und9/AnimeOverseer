@@ -16,6 +16,8 @@ public class AnimeDbContext : DbContext
     public DbSet<Season> Seasons { get; set; }
     public DbSet<Request> Requests { get; set; }
     public DbSet<CachedAnimeRelation> CachedAnimeRelations { get; set; }
+    public DbSet<AppSetting> AppSettings { get; set; }
+    public DbSet<SyncJob> SyncJobs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
