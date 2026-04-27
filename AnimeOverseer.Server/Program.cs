@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using AnimeOverseer.Server;
+using AnimeOverseer.Server.BackgroundServices;
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using AnimeOverseer.Server.Services;
@@ -30,6 +31,7 @@ builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<IAnimeDataSource, AnimeCacheService>();
 builder.Services.AddSingleton<ImageCacheService>();
+builder.Services.AddHostedService<AnimeRefreshBackgroundService>();
 
 var app = builder.Build();
 
