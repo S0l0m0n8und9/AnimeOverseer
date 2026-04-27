@@ -3,7 +3,6 @@
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
 @using System.Text.Json
-@using System.Text.Json.Serialization
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 @implements IDisposable
@@ -13,29 +12,14 @@
 <div class="dashboard">
     <div class="controls-bar">
         <div class="filters-row">
-            <label class="filter-label" for="season-select">Season:</label>
-            <select id="season-select" @bind="selectedSeason" @bind:event="oninput" class="form-select">
-                <option value="spring">Spring</option>
-                <option value="summer">Summer</option>
-                <option value="fall">Fall</option>
-                <option value="winter">Winter</option>
+            <label class="filter-label" for="pagesize-select">Load:</label>
+            <select id="pagesize-select" value="@pageSize" @onchange="OnPageSizeChanged" class="form-select" style="width:auto">
+                <option value="12">12</option>
+                <option value="24">24</option>
+                <option value="48">48</option>
+                <option value="96">96</option>
             </select>
-
-            <label class="filter-label" for="year-select">Year:</label>
-            <select id="year-select" @bind="selectedYear" @bind:event="oninput" class="form-select">
-                @for (int y = 2030; y >= 2000; y--)
-                {
-                    <option value="@y">@y</option>
-                }
-            </select>
-
-            <button class="btn btn-primary" @onclick="FetchSeasonAnimes" disabled="@isLoading">
-                <span class="btn-icon">&#x1F50D;</span> Search Season
-            </button>
-
-            <button class="btn btn-secondary" @onclick="RefreshFromWeb" disabled="@isLoading" title="Bypass cache and fetch fresh data from the web">
-                <span class="btn-icon">&#x1F504;</span> Refresh from Web
-            </button>
+            <span class="filter-label">at a time</span>
         </div>
 
         <div class="search-row">
@@ -51,21 +35,17 @@
     </div>
 
     <div class="results-info">
-        @if (filterState.IsActive)
+        @if (!string.IsNullOrWhiteSpace(searchQuery))
         {
-            <span>@DisplayedAnimes.Count of @allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") shown</span>
+            <span>@DisplayedAnimes.Count result@(DisplayedAnimes.Count != 1 ? "s" : "") for "@searchQuery"</span>
+        }
+        else if (filterState.IsActive)
+        {
+            <span>@DisplayedAnimes.Count of @allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") shown (@totalCount total)</span>
         }
         else
         {
-            <span>@allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") found</span>
-        }
-        @if (!string.IsNullOrEmpty(searchQuery))
-        {
-            <span class="search-hint">Showing results for "@searchQuery"</span>
-        }
-        @if (isRefreshing)
-        {
-            <span class="search-hint">Refreshing from web...</span>
+            <span>@allAnimes.Count of @totalCount anime@(totalCount != 1 ? "s" : "")</span>
         }
     </div>
 
@@ -73,10 +53,10 @@
     {
         <div class="loading-container">
             <div class="spinner"></div>
-            <p>@(isRefreshing ? "Fetching fresh data from the web..." : "Loading anime data...")</p>
+            <p>Loading anime data...</p>
         </div>
     }
-    else if (!isLoading && DisplayedAnimes.Count == 0)
+    else if (!isLoading && !isLoadingMore && DisplayedAnimes.Count == 0)
     {
         <div class="empty-state">
             <span class="empty-icon">&#x1F3AC;</span>
@@ -86,9 +66,13 @@
                 {
                     <text>No anime match the active filters. Try adjusting or clearing them.</text>
                 }
+                else if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <text>No results for "@searchQuery".</text>
+                }
                 else
                 {
-                    <text>Try selecting a different season or year, or search for an anime title.</text>
+                    <text>No anime in the database yet.</text>
                 }
             </p>
         </div>
@@ -102,28 +86,35 @@
             }
         </div>
     }
+
+    @if (string.IsNullOrWhiteSpace(searchQuery))
+    {
+        @if (isLoadingMore)
+        {
+            <div class="loading-container" style="padding:1rem 0">
+                <div class="spinner"></div>
+            </div>
+        }
+        else if (!isLoading && allAnimes.Count < totalCount)
+        {
+            <div style="display:flex;justify-content:center;padding:1.5rem 0">
+                <button class="btn btn-primary" @onclick="LoadMore">
+                    Load More (@(totalCount - allAnimes.Count) remaining)
+                </button>
+            </div>
+        }
+    }
 </div>
 
 @code {
     private List<Anime> allAnimes = new();
     private FilterState filterState = new();
     private SortState sortState = new();
-    private string selectedSeason = CurrentAnimeSeason();
-    private int selectedYear = CurrentAnimeYear();
-
-    // Anime seasons follow Japan (Northern Hemisphere) regardless of server locale.
-    private static string CurrentAnimeSeason() => DateTime.UtcNow.Month switch
-    {
-        1 or 2 or 3   => "winter",
-        4 or 5 or 6   => "spring",
-        7 or 8 or 9   => "summer",
-        _             => "fall"
-    };
-
-    private static int CurrentAnimeYear() => DateTime.UtcNow.Year;
+    private int pageSize = 24;
+    private int totalCount = 0;
     private string searchQuery = string.Empty;
     private bool isLoading = false;
-    private bool isRefreshing = false;
+    private bool isLoadingMore = false;
     private bool _ownNavigation = false;
 
     private List<Anime> DisplayedAnimes => SortEngine.Apply(FilterEngine.Apply(allAnimes, filterState), sortState);
@@ -148,8 +139,6 @@
         NavManager.LocationChanged -= OnLocationChanged;
     }
 
-    // Fires on browser back/forward and on any NavigateTo call.
-    // Skip if WE initiated the navigation.
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         if (_ownNavigation) { _ownNavigation = false; return; }
@@ -163,30 +152,28 @@
 
     // ── URL ──────────────────────────────────────────────────
 
-    // Parses URL, updates all state fields, then loads data.
-    // Never calls PushUrl — URL is already correct when this runs.
     private async Task RestoreFromUrl(string uri)
     {
         var qs = ParseQuery(uri);
 
-        selectedSeason = qs.GetValueOrDefault("season", CurrentAnimeSeason());
-        selectedYear   = qs.TryGetValue("year", out var y) && int.TryParse(y, out var yi) ? yi : CurrentAnimeYear();
-        searchQuery    = qs.GetValueOrDefault("q", string.Empty);
-        filterState    = qs.TryGetValue("filters", out var f)
+        pageSize    = qs.TryGetValue("pageSize", out var ps) && int.TryParse(ps, out var psi) ? psi : 24;
+        searchQuery = qs.GetValueOrDefault("q", string.Empty);
+        filterState = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
-        sortState      = qs.TryGetValue("sort", out var s)
+        sortState   = qs.TryGetValue("sort", out var s)
             ? DeserializeSort(s) ?? new SortState()
             : new SortState();
+
+        allAnimes  = new();
+        totalCount = 0;
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
         else
-            await LoadSeason();
+            await LoadRecent();
     }
 
-    // Push a new history entry (Search Season / text search).
-    // Use replace:true for in-place updates (filter changes, refresh).
     private void PushUrl(bool replace = false)
     {
         _ownNavigation = true;
@@ -195,19 +182,16 @@
 
     private string BuildUrl()
     {
-        var parts = new List<string>
-        {
-            $"season={Uri.EscapeDataString(selectedSeason)}",
-            $"year={selectedYear}"
-        };
+        var parts = new List<string>();
+        if (pageSize != 24)
+            parts.Add($"pageSize={pageSize}");
         if (!string.IsNullOrEmpty(searchQuery))
             parts.Add($"q={Uri.EscapeDataString(searchQuery)}");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
         if (sortState.IsActive)
             parts.Add($"sort={Uri.EscapeDataString(SerializeSort(sortState))}");
-
-        return "/?" + string.Join("&", parts);
+        return parts.Count == 0 ? "/" : "/?" + string.Join("&", parts);
     }
 
     private static Dictionary<string, string> ParseQuery(string uri)
@@ -225,7 +209,97 @@
                 StringComparer.OrdinalIgnoreCase);
     }
 
-    // Compact serialisation — omits GUIDs, only stores meaningful values.
+    // ── Data loading ─────────────────────────────────────────
+
+    private async Task LoadRecent(bool append = false)
+    {
+        if (append) isLoadingMore = true;
+        else isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var skip = append ? allAnimes.Count : 0;
+            var items = await AnimeDataSource.GetRecentAsync(skip, pageSize);
+            totalCount = await AnimeDataSource.GetTotalCountAsync();
+            if (append)
+                allAnimes.AddRange(items);
+            else
+                allAnimes = items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching anime: {ex.Message}");
+            if (!append) allAnimes = new();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingMore = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadSearch()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            allAnimes  = await AnimeDataSource.SearchAsync(searchQuery);
+            totalCount = allAnimes.Count;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching: {ex.Message}");
+            allAnimes = new();
+        }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    // ── User actions ─────────────────────────────────────────
+
+    private async Task LoadMore() => await LoadRecent(append: true);
+
+    private async Task OnPageSizeChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var size) || size == pageSize) return;
+        pageSize   = size;
+        allAnimes  = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadRecent();
+    }
+
+    private async Task SearchAnime()
+    {
+        allAnimes  = new();
+        totalCount = 0;
+        PushUrl(replace: false);
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+            await LoadSearch();
+        else
+            await LoadRecent();
+    }
+
+    private void OnFilterChanged()
+    {
+        PushUrl(replace: true);
+        StateHasChanged();
+    }
+
+    private void OnSortChanged()
+    {
+        PushUrl(replace: true);
+        StateHasChanged();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await SearchAnime();
+    }
+
+    // ── Serialisation ────────────────────────────────────────
+
     private static string SerializeFilters(FilterState state)
     {
         var dto = new
@@ -259,7 +333,7 @@
         try
         {
             using var doc = JsonDocument.Parse(encoded);
-            var state = new SortState
+            return new SortState
             {
                 Criteria = doc.RootElement.EnumerateArray().Select(c => new SortCriterion
                 {
@@ -267,7 +341,6 @@
                     Direction = (SortDirection)c.GetProperty("d").GetInt32()
                 }).ToList()
             };
-            return state;
         }
         catch { return null; }
     }
@@ -277,7 +350,7 @@
         try
         {
             using var doc = JsonDocument.Parse(encoded);
-            var root = doc.RootElement;
+            var root  = doc.RootElement;
             var state = new FilterState
             {
                 TopLevelLogic = (GroupLogic)root.GetProperty("l").GetInt32(),
@@ -296,83 +369,5 @@
             return state;
         }
         catch { return null; }
-    }
-
-    // ── Data loading (no URL side-effects — safe to call from RestoreFromUrl) ──
-
-    private async Task LoadSeason(bool forceRefresh = false)
-    {
-        isLoading = true;
-        StateHasChanged();
-        try
-        {
-            allAnimes = await AnimeDataSource.GetSeasonAnimes(selectedYear, selectedSeason, forceRefresh);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error fetching season anime: {ex.Message}");
-            allAnimes = new();
-        }
-        finally { isLoading = false; isRefreshing = false; StateHasChanged(); }
-    }
-
-    private async Task LoadSearch()
-    {
-        isLoading = true;
-        StateHasChanged();
-        try
-        {
-            allAnimes = await AnimeDataSource.SearchAsync(searchQuery);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error searching: {ex.Message}");
-            allAnimes = new();
-        }
-        finally { isLoading = false; StateHasChanged(); }
-    }
-
-    // ── User actions (push URL then load) ────────────────────
-
-    private async Task FetchSeasonAnimes()
-    {
-        searchQuery = string.Empty;
-        PushUrl(replace: false);
-        await LoadSeason();
-    }
-
-    private async Task RefreshFromWeb()
-    {
-        isRefreshing = true;
-        PushUrl(replace: true);
-        await LoadSeason(forceRefresh: true);
-    }
-
-    private async Task SearchAnime()
-    {
-        if (string.IsNullOrWhiteSpace(searchQuery))
-        {
-            await FetchSeasonAnimes();
-            return;
-        }
-        PushUrl(replace: false);
-        await LoadSearch();
-    }
-
-    private void OnFilterChanged()
-    {
-        PushUrl(replace: true);
-        StateHasChanged();
-    }
-
-    private void OnSortChanged()
-    {
-        PushUrl(replace: true);
-        StateHasChanged();
-    }
-
-    private async Task HandleKeyDown(KeyboardEventArgs args)
-    {
-        if (args.Key == "Enter") await SearchAnime();
     }
 }

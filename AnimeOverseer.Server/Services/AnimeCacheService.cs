@@ -81,6 +81,20 @@ public class AnimeCacheService : IAnimeDataSource
         return anime;
     }
 
+    public async Task<List<Anime>> GetRecentAsync(int skip, int take)
+    {
+        return await _db.Animes
+            .Include(a => a.Season)
+            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+            .OrderByDescending(a => a.StartDate)
+            .ThenByDescending(a => a.CachedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetTotalCountAsync() => await _db.Animes.CountAsync();
+
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
 
     public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId, bool forceRefresh = false)

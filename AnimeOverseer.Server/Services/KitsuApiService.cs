@@ -92,6 +92,8 @@ public class KitsuApiService : IAnimeDataSource
     }
 
     public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId, bool forceRefresh = false) => Task.FromResult(new List<AnimeRelation>());
+    public Task<List<Anime>> GetRecentAsync(int skip, int take) => Task.FromResult(new List<Anime>());
+    public Task<int> GetTotalCountAsync() => Task.FromResult(0);
 
     public Task<List<Genre>> GetAllGenresAsync()
     {
