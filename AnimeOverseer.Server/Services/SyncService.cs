@@ -19,7 +19,11 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
         {
             if (ct.IsCancellationRequested) break;
             await dataSource.GetSeasonAnimes(year, season, forceRefresh: true);
+            // AnimeCacheService already committed all season data; clear its accumulated
+            // tracked entities so SaveChanges below only processes the job update.
+            db.ChangeTracker.Clear();
             job.ProcessedCount++;
+            db.SyncJobs.Update(job);
             await db.SaveChangesAsync(ct);
         }
     }

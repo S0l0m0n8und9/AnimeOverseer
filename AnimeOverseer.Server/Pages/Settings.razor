@@ -238,10 +238,18 @@
         {
             await Task.Delay(3000, ct);
             if (ct.IsCancellationRequested) break;
-            await LoadJobsAsync();
-            await InvokeAsync(StateHasChanged);
-            if (!_jobs.Any(j => j.Status is "Queued" or "Running"))
-                break;
+
+            // Both the DB read and the _jobs assignment must happen on the Blazor sync context
+            // to avoid concurrent DbContext access and render-vs-update data races.
+            var hasActive = false;
+            await InvokeAsync(async () =>
+            {
+                await LoadJobsAsync();
+                hasActive = _jobs.Any(j => j.Status is "Queued" or "Running");
+                StateHasChanged();
+            });
+
+            if (!hasActive) break;
         }
     }
 
