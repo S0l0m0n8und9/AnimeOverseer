@@ -57,6 +57,19 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         }
     }
 
+    private static int ParseSkipCount(string? parameters)
+    {
+        if (string.IsNullOrWhiteSpace(parameters)) return 0;
+        try
+        {
+            var doc = JsonDocument.Parse(parameters);
+            if (doc.RootElement.TryGetProperty("skipCount", out var el))
+                return el.GetInt32();
+        }
+        catch { }
+        return 0;
+    }
+
     private static (int[] Years, string[] Seasons) ParseJikanParams(string? parameters)
     {
         if (!string.IsNullOrWhiteSpace(parameters))
@@ -78,13 +91,17 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
     public async Task RunAniListSyncAsync(SyncJob job, CancellationToken ct)
     {
+        int skipCount = ParseSkipCount(job.Parameters);
         var animes = await db.Animes
             .Where(a => a.MALId != null && a.MALId > 0)
             .OrderBy(a => a.Id)
+            .Skip(skipCount)
             .ToListAsync(ct);
 
-        job.TotalCount = animes.Count;
-        Log(job, $"Starting AniList enrichment — {animes.Count:N0} anime with MAL IDs");
+        job.TotalCount = animes.Count + skipCount;
+        job.ProcessedCount = skipCount;
+        var resumeNote = skipCount > 0 ? $" (resuming from {skipCount:N0})" : "";
+        Log(job, $"Starting AniList enrichment — {job.TotalCount:N0} anime with MAL IDs{resumeNote}");
         await db.SaveChangesAsync(ct);
 
         int errors = 0;
@@ -120,13 +137,17 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
     public async Task RunKitsuSyncAsync(SyncJob job, CancellationToken ct)
     {
+        int skipCount = ParseSkipCount(job.Parameters);
         var animes = await db.Animes
             .Where(a => (a.KitsuId == null || a.KitsuId == 0) && a.Title != null)
             .OrderBy(a => a.Id)
+            .Skip(skipCount)
             .ToListAsync(ct);
 
-        job.TotalCount = animes.Count;
-        Log(job, $"Starting Kitsu enrichment — {animes.Count:N0} anime without Kitsu data");
+        job.TotalCount = animes.Count + skipCount;
+        job.ProcessedCount = skipCount;
+        var resumeNote = skipCount > 0 ? $" (resuming from {skipCount:N0})" : "";
+        Log(job, $"Starting Kitsu enrichment — {job.TotalCount:N0} anime without Kitsu data{resumeNote}");
         await db.SaveChangesAsync(ct);
 
         int errors = 0;

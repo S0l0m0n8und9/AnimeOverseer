@@ -74,6 +74,20 @@
             {
                 <div style="margin-top:.35rem;font-size:.82em;color:#888">@FormatParameters(_job.Parameters)</div>
             }
+
+            @if (_job.Status == "Failed" && _job.ProcessedCount > 0)
+            {
+                <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                    <button @onclick="ContinueJobAsync" disabled="@_continuing"
+                            style="padding:.35rem .85rem;background:#0d6efd;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85em;opacity:@(_continuing ? ".6" : "1")">
+                        @(_continuing ? "Queuing…" : $"Continue (skip {_job.ProcessedCount:N0} already processed)")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_continueError))
+                    {
+                        <span style="color:#dc3545;font-size:.85em">@_continueError</span>
+                    }
+                </div>
+            }
         </div>
 
         <hr style="border-color:#333;margin-bottom:1.25rem" />
@@ -122,6 +136,8 @@
     private SyncJob? _job;
     private List<SyncJobLog> _logs = new();
     private bool _notFound = false;
+    private bool _continuing = false;
+    private string _continueError = string.Empty;
     private CancellationTokenSource _cts = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -166,6 +182,20 @@
         }
     }
 
+    private async Task ContinueJobAsync()
+    {
+        _continuing = true;
+        _continueError = string.Empty;
+        var newJob = await SyncJobService.ContinueAsync(_job!.Id);
+        if (newJob != null)
+            NavManager.NavigateTo($"/jobs/{newJob.Id}");
+        else
+        {
+            _continueError = "Could not queue continuation — a job of this type may already be active.";
+            _continuing = false;
+        }
+    }
+
     private async Task RefreshAsync()
     {
         var job = await SyncJobService.GetByIdAsync(Id);
@@ -195,10 +225,19 @@
         try
         {
             var doc = JsonDocument.Parse(parameters);
-            var years = string.Join(", ", doc.RootElement.GetProperty("years").EnumerateArray().Select(e => e.GetInt32()));
-            var seasons = string.Join(", ", doc.RootElement.GetProperty("seasons").EnumerateArray()
-                .Select(e => { var s = e.GetString() ?? ""; return char.ToUpper(s[0]) + s[1..]; }));
-            return $"Years: {years} | Seasons: {seasons}";
+            var root = doc.RootElement;
+            var parts = new List<string>();
+
+            if (root.TryGetProperty("years", out var yearsEl))
+                parts.Add($"Years: {string.Join(", ", yearsEl.EnumerateArray().Select(e => e.GetInt32()))}");
+
+            if (root.TryGetProperty("seasons", out var seasonsEl))
+                parts.Add($"Seasons: {string.Join(", ", seasonsEl.EnumerateArray().Select(e => { var s = e.GetString() ?? ""; return s.Length > 0 ? char.ToUpper(s[0]) + s[1..] : s; }))}");
+
+            if (root.TryGetProperty("skipCount", out var skipEl) && skipEl.GetInt32() > 0)
+                parts.Add($"Resumed from: {skipEl.GetInt32():N0}");
+
+            return parts.Count > 0 ? string.Join(" | ", parts) : parameters;
         }
         catch { return parameters; }
     }
