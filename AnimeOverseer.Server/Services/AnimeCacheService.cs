@@ -258,15 +258,22 @@ public class AnimeCacheService : IAnimeDataSource
             .ToList();
     }
 
-    private async Task<List<Anime>> FetchAndCacheYear(int year)
+    // Public entry point for SyncService: fetch only the specified seasons with per-page progress callback.
+    public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null)
+        => FetchAndCacheYear(year, seasons, onPageFetched);
+
+    private async Task<List<Anime>> FetchAndCacheYear(int year,
+        string[]? selectedSeasons = null, Func<int, int, Task>? onPageFetched = null)
     {
+        var seasonsToFetch = selectedSeasons ?? AllSeasons;
+
         // Fetch each season sequentially to respect Jikan rate limit (~3 req/sec)
         var seasonAnimes = new List<(string Season, List<Anime> Animes)>();
-        foreach (var s in AllSeasons)
+        foreach (var s in seasonsToFetch)
         {
-            var animes = await _jikan.GetSeasonAnimes(year, s);
+            var animes = await _jikan.FetchSeasonPagesAsync(year, s, onPageFetched);
             seasonAnimes.Add((s, animes));
-            if (s != AllSeasons[^1])
+            if (s != seasonsToFetch[^1])
                 await Task.Delay(400);
         }
 
@@ -454,7 +461,7 @@ public class AnimeCacheService : IAnimeDataSource
         foreach (var source in sourcesWithGenres)
         {
             if (!dbByMalId.TryGetValue(source.MALId!.Value, out var dbAnime)) continue;
-            foreach (var ag in source.AnimeGenres)
+            foreach (var ag in source.AnimeGenres.ToList())
             {
                 var name = ag.Genre.Name.Trim();
                 if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var genre)) continue;

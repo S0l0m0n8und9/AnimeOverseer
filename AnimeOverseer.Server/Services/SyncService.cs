@@ -1,35 +1,50 @@
+using System.Text.Json;
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.Services;
 
-public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniListApiService aniList, KitsuApiService kitsu)
+public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, KitsuApiService kitsu)
 {
-    private static readonly string[] Seasons = ["spring", "summer", "fall", "winter"];
-
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
-        var year = DateTime.UtcNow.Year;
-        job.TotalCount = Seasons.Length;
-        Log(job, $"Sync started — fetching {Seasons.Length} seasons for {year}");
+        var (years, seasons) = ParseJikanParams(job.Parameters);
+        // TotalCount is 0 because total anime across all pages is unknown upfront.
+        job.TotalCount = 0;
+        Log(job, $"Sync started — {seasons.Length} season(s) × {years.Length} year(s)");
         await db.SaveChangesAsync(ct);
 
-        foreach (var season in Seasons)
+        foreach (var year in years)
         {
             if (ct.IsCancellationRequested) break;
 
-            Log(job, $"Fetching {season} {year} from Jikan…");
-            await db.SaveChangesAsync(ct); // persist "Fetching" entry before the slow API call
+            Log(job, $"Fetching {string.Join(", ", seasons)} {year}…");
+            await db.SaveChangesAsync(ct);
 
-            var animes = await dataSource.GetSeasonAnimes(year, season, forceRefresh: true);
+            // Callback fires after every page; persists the running anime count immediately.
+            // Uses SyncService's own db context — AnimeCacheService has its own isolated context.
+            async Task OnPageFetched(int page, int count)
+            {
+                if (ct.IsCancellationRequested) return;
+                job.ProcessedCount += count;
+                db.SyncJobs.Update(job);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
 
-            // AnimeCacheService already committed all season data; clear accumulated
-            // tracked entities so only the job update and log entry are saved below.
+            // Resolve AnimeCacheService in its own child scope so it gets a dedicated DbContext,
+            // preventing ChangeTracker conflicts with this service's db instance.
+            using var cacheScope = scopeFactory.CreateScope();
+            var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+            await cache.FetchAndCacheSeasonsAsync(year, seasons, OnPageFetched);
+
+            if (ct.IsCancellationRequested) break;
+
+            // AnimeCacheService has already committed all anime data; clear any residual
+            // tracked entities so only the job update and log entry are saved here.
             db.ChangeTracker.Clear();
-            job.ProcessedCount++;
             db.SyncJobs.Update(job);
-            Log(job, $"Completed {season} {year} — {animes.Count} anime cached", "Success");
+            Log(job, $"Completed {year} — {job.ProcessedCount:N0} anime fetched so far", "Success");
             await db.SaveChangesAsync(ct);
         }
 
@@ -37,9 +52,28 @@ public class SyncService(AnimeDbContext db, IAnimeDataSource dataSource, AniList
         {
             db.ChangeTracker.Clear();
             db.SyncJobs.Update(job);
-            Log(job, $"Sync complete — {job.ProcessedCount} of {job.TotalCount} seasons processed", "Success");
+            Log(job, $"Sync complete — {job.ProcessedCount:N0} anime processed", "Success");
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    private static (int[] Years, string[] Seasons) ParseJikanParams(string? parameters)
+    {
+        if (!string.IsNullOrWhiteSpace(parameters))
+        {
+            try
+            {
+                var doc = JsonDocument.Parse(parameters);
+                var years = doc.RootElement.GetProperty("years")
+                    .EnumerateArray().Select(e => e.GetInt32()).ToArray();
+                var seasons = doc.RootElement.GetProperty("seasons")
+                    .EnumerateArray().Select(e => e.GetString()!).ToArray();
+                if (years.Length > 0 && seasons.Length > 0)
+                    return (years, seasons);
+            }
+            catch { }
+        }
+        return ([DateTime.UtcNow.Year], ["spring", "summer", "fall", "winter"]);
     }
 
     public async Task RunAniListSyncAsync(SyncJob job, CancellationToken ct)

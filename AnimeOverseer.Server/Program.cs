@@ -29,7 +29,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpClient<JikanApiService>();
 builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<KitsuApiService>();
-builder.Services.AddScoped<IAnimeDataSource, AnimeCacheService>();
+builder.Services.AddScoped<AnimeCacheService>();
+builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCacheService>());
 builder.Services.AddSingleton<ImageCacheService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<SyncJobService>();
@@ -127,7 +128,8 @@ using (var scope = app.Services.CreateScope())
                 FinishedAt TEXT,
                 ProcessedCount INTEGER NOT NULL DEFAULT 0,
                 TotalCount INTEGER NOT NULL DEFAULT 0,
-                Message TEXT
+                Message TEXT,
+                Parameters TEXT
             )");
             db.Database.ExecuteSqlRaw("CREATE INDEX IX_SyncJobs_Status ON SyncJobs (Status)");
         }
@@ -148,6 +150,18 @@ using (var scope = app.Services.CreateScope())
             )");
             db.Database.ExecuteSqlRaw("CREATE INDEX IX_SyncJobLogs_SyncJobId ON SyncJobLogs (SyncJobId)");
         }
+    }
+
+    // Migrate SyncJobs: add Parameters column if missing
+    using (var cmd = connection.CreateCommand())
+    {
+        cmd.CommandText = "PRAGMA table_info(SyncJobs)";
+        using var reader = await cmd.ExecuteReaderAsync();
+        var syncJobsColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync())
+            syncJobsColumns.Add(reader.GetString(1));
+        if (!syncJobsColumns.Contains("Parameters"))
+            db.Database.ExecuteSqlRaw("ALTER TABLE SyncJobs ADD COLUMN Parameters TEXT");
     }
 
     // Ensure image cache directory exists

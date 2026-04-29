@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
+@using System.Text.Json
 @inject SyncJobService SyncJobService
 @inject NavigationManager NavManager
 @implements IDisposable
@@ -51,6 +52,10 @@
                 {
                     <div><span style="color:#888">Progress</span><br/>@_job.ProcessedCount.ToString("N0") / @_job.TotalCount.ToString("N0")</div>
                 }
+                else if (_job.ProcessedCount > 0)
+                {
+                    <div><span style="color:#888">Fetched</span><br/>@_job.ProcessedCount.ToString("N0") anime</div>
+                }
             </div>
 
             @if (_job.TotalCount > 0)
@@ -64,6 +69,10 @@
             @if (!string.IsNullOrEmpty(_job.Message))
             {
                 <div style="margin-top:.5rem;font-size:.85em;color:#aaa">@_job.Message</div>
+            }
+            @if (!string.IsNullOrEmpty(_job.Parameters))
+            {
+                <div style="margin-top:.35rem;font-size:.82em;color:#888">@FormatParameters(_job.Parameters)</div>
             }
         </div>
 
@@ -159,9 +168,13 @@
 
     private async Task RefreshAsync()
     {
-        _job = await SyncJobService.GetByIdAsync(Id);
-        if (_job == null) { _notFound = true; return; }
-        _logs = await SyncJobService.GetLogsAsync(Id);
+        var job = await SyncJobService.GetByIdAsync(Id);
+        if (job == null) { _notFound = true; return; }
+        var logs = await SyncJobService.GetLogsAsync(Id);
+        // Assign both fields without any await between them so no render fires
+        // between the two assignments and sees a torn (_job=new, _logs=old) state.
+        _job = job;
+        _logs = logs;
     }
 
     private static string FormatDateTime(DateTime dt)
@@ -174,6 +187,20 @@
         if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m {span.Seconds}s";
         if (span.TotalMinutes >= 1) return $"{span.Minutes}m {span.Seconds}s";
         return $"{span.Seconds}s";
+    }
+
+    private static string FormatParameters(string? parameters)
+    {
+        if (string.IsNullOrWhiteSpace(parameters)) return string.Empty;
+        try
+        {
+            var doc = JsonDocument.Parse(parameters);
+            var years = string.Join(", ", doc.RootElement.GetProperty("years").EnumerateArray().Select(e => e.GetInt32()));
+            var seasons = string.Join(", ", doc.RootElement.GetProperty("seasons").EnumerateArray()
+                .Select(e => { var s = e.GetString() ?? ""; return char.ToUpper(s[0]) + s[1..]; }));
+            return $"Years: {years} | Seasons: {seasons}";
+        }
+        catch { return parameters; }
     }
 
     private static RenderFragment StatusBadge(string status) => builder =>

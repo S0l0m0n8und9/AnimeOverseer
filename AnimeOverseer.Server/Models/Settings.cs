@@ -27,4 +27,5 @@ public class SyncJob
     public int ProcessedCount { get; set; }
     public int TotalCount { get; set; }
     public string? Message { get; set; }
+    public string? Parameters { get; set; }
 }

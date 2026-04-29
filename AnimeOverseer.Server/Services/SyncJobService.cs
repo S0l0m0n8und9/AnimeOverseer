@@ -6,13 +6,13 @@ namespace AnimeOverseer.Server.Services;
 
 public class SyncJobService(AnimeDbContext db)
 {
-    public async Task<SyncJob?> QueueAsync(string jobType)
+    public async Task<SyncJob?> QueueAsync(string jobType, string? parameters = null)
     {
         var alreadyActive = await db.SyncJobs.AnyAsync(j =>
             j.JobType == jobType && (j.Status == "Queued" || j.Status == "Running"));
         if (alreadyActive) return null;
 
-        var job = new SyncJob { JobType = jobType, QueuedAt = DateTime.UtcNow };
+        var job = new SyncJob { JobType = jobType, QueuedAt = DateTime.UtcNow, Parameters = parameters };
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync();
         return job;
@@ -25,10 +25,11 @@ public class SyncJobService(AnimeDbContext db)
             .ToListAsync();
 
     public async Task<SyncJob?> GetByIdAsync(int id)
-        => await db.SyncJobs.FindAsync(id);
+        => await db.SyncJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id);
 
     public async Task<List<SyncJobLog>> GetLogsAsync(int jobId)
         => await db.SyncJobLogs
+            .AsNoTracking()
             .Where(l => l.SyncJobId == jobId)
             .OrderBy(l => l.Timestamp)
             .ThenBy(l => l.Id)

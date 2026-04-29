@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
+@using System.Text.Json
 @inject SettingsService SettingsService
 @inject SyncJobService SyncJobService
 @inject IHttpClientFactory HttpClientFactory
@@ -26,10 +27,16 @@
                 {
                     <div style="margin-bottom:.5rem">
                         @StatusBadge(active.Status)
-                        @if (active.TotalCount > 0)
-                        {
-                            <span style="margin-left:.5rem;font-size:.85em">@active.ProcessedCount / @active.TotalCount</span>
-                        }
+                        <span style="margin-left:.5rem;font-size:.85em">
+                            @if (active.TotalCount > 0)
+                            {
+                                @($"{active.ProcessedCount:N0} / {active.TotalCount:N0}")
+                            }
+                            else if (active.ProcessedCount > 0)
+                            {
+                                @($"{active.ProcessedCount:N0} anime")
+                            }
+                        </span>
                     </div>
                     @if (active.TotalCount > 0)
                     {
@@ -49,9 +56,43 @@
                 {
                     <div style="font-size:.8em;color:#888;margin-bottom:.5rem">Never run</div>
                 }
+
+                @if (type == "Jikan")
+                {
+                    var currentYear = DateTime.UtcNow.Year;
+                    <div style="margin-bottom:.5rem">
+                        <div style="font-size:.78em;color:#aaa;margin-bottom:.3rem">Years</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:.2rem .6rem">
+                            @foreach (var yr in Enumerable.Range(currentYear - 4, 6))
+                            {
+                                var y = yr;
+                                <label style="font-size:.82em;display:flex;align-items:center;gap:.25rem;cursor:pointer">
+                                    <input type="checkbox" checked="@_jikanYears.Contains(y)"
+                                           @onchange="e => ToggleJikanYear(y, (bool)e.Value!)" />
+                                    @y
+                                </label>
+                            }
+                        </div>
+                    </div>
+                    <div style="margin-bottom:.75rem">
+                        <div style="font-size:.78em;color:#aaa;margin-bottom:.3rem">Seasons</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:.2rem .6rem">
+                            @foreach (var s in new[] { "spring", "summer", "fall", "winter" })
+                            {
+                                var season = s;
+                                <label style="font-size:.82em;display:flex;align-items:center;gap:.25rem;cursor:pointer">
+                                    <input type="checkbox" checked="@_jikanSeasons.Contains(season)"
+                                           @onchange="e => ToggleJikanSeason(season, (bool)e.Value!)" />
+                                    @(char.ToUpper(season[0]) + season[1..])
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem"
                         @onclick="() => TriggerSync(type)"
-                        disabled="@(active != null || _triggering)">
+                        disabled="@(active != null || _triggering || (type == "Jikan" && (_jikanYears.Count == 0 || _jikanSeasons.Count == 0)))">
                     Sync Now
                 </button>
             </div>
@@ -198,6 +239,9 @@
     private bool _triggering = false;
     private CancellationTokenSource _cts = new();
 
+    private HashSet<int> _jikanYears = new() { DateTime.UtcNow.Year };
+    private HashSet<string> _jikanSeasons = new(["spring", "summer", "fall", "winter"]);
+
     private string _sonarrUrl = "", _sonarrKey = "";
     private string _radarrUrl = "", _radarrKey = "";
     private string _plexUrl = "", _plexToken = "";
@@ -279,11 +323,29 @@
         _triggering = true;
         try
         {
-            await SyncJobService.QueueAsync(jobType);
+            string? parameters = null;
+            if (jobType == "Jikan")
+                parameters = JsonSerializer.Serialize(new
+                {
+                    years = _jikanYears.OrderBy(y => y),
+                    seasons = _jikanSeasons.OrderBy(s => s)
+                });
+
+            await SyncJobService.QueueAsync(jobType, parameters);
             await LoadJobsAsync();
             StartPolling();
         }
         finally { _triggering = false; }
+    }
+
+    private void ToggleJikanYear(int year, bool isChecked)
+    {
+        if (isChecked) _jikanYears.Add(year); else _jikanYears.Remove(year);
+    }
+
+    private void ToggleJikanSeason(string season, bool isChecked)
+    {
+        if (isChecked) _jikanSeasons.Add(season); else _jikanSeasons.Remove(season);
     }
 
     // ── Settings save ─────────────────────────────────────────────────────

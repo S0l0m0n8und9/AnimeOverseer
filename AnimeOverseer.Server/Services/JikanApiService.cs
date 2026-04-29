@@ -13,23 +13,45 @@ public class JikanApiService : IAnimeDataSource
     }
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
+        => await FetchSeasonPagesAsync(year, season);
+
+    // Internal paginated fetch; onPageFetched(pageNumber, animeCount) is awaited after each page.
+    internal async Task<List<Anime>> FetchSeasonPagesAsync(
+        int year, string season, Func<int, int, Task>? onPageFetched = null)
     {
         var animes = new List<Anime>();
+        var page = 1;
         try
         {
-            var response = await _httpClient.GetAsync($"https://api.jikan.moe/v4/seasons/{year}/{season}");
-            if (response.IsSuccessStatusCode)
+            while (true)
             {
+                var response = await _httpClient.GetAsync(
+                    $"https://api.jikan.moe/v4/seasons/{year}/{season}?page={page}");
+                if (!response.IsSuccessStatusCode) break;
+
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
-                foreach (var anime in data.EnumerateArray())
-                    animes.Add(MapFromJikan(anime));
+
+                var pageAnimes = new List<Anime>();
+                foreach (var anime in doc.RootElement.GetProperty("data").EnumerateArray())
+                    pageAnimes.Add(MapFromJikan(anime));
+                animes.AddRange(pageAnimes);
+
+                if (onPageFetched != null)
+                    await onPageFetched(page, pageAnimes.Count);
+
+                var hasNextPage = doc.RootElement.TryGetProperty("pagination", out var pagination) &&
+                                  pagination.TryGetProperty("has_next_page", out var hnp) &&
+                                  hnp.GetBoolean();
+                if (!hasNextPage) break;
+
+                page++;
+                await Task.Delay(400); // ~3 req/sec Jikan rate limit
             }
         }
         catch
         {
-            // Rate limiting or API errors
+            // Rate limiting or API errors — return whatever was collected so far
         }
         return animes;
     }
