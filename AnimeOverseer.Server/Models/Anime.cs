@@ -62,6 +62,10 @@ public class Anime
 
     public List<AnimeGenre> AnimeGenres { get; set; } = new();
 
+    public List<AnimeTheme> AnimeThemes { get; set; } = new();
+
+    public List<AnimeDemographic> AnimeDemographics { get; set; } = new();
+
     public List<Request> Requests { get; set; } = new();
 
     [NotMapped]
@@ -85,6 +89,44 @@ public class AnimeGenre
 
     public int GenreId { get; set; }
     public Genre Genre { get; set; } = null!;
+}
+
+public class Theme
+{
+    public int Id { get; set; }
+
+    [Required]
+    public string Name { get; set; } = string.Empty;
+
+    public List<AnimeTheme> AnimeThemes { get; set; } = new();
+}
+
+public class AnimeTheme
+{
+    public int AnimeId { get; set; }
+    public Anime Anime { get; set; } = null!;
+
+    public int ThemeId { get; set; }
+    public Theme Theme { get; set; } = null!;
+}
+
+public class Demographic
+{
+    public int Id { get; set; }
+
+    [Required]
+    public string Name { get; set; } = string.Empty;
+
+    public List<AnimeDemographic> AnimeDemographics { get; set; } = new();
+}
+
+public class AnimeDemographic
+{
+    public int AnimeId { get; set; }
+    public Anime Anime { get; set; } = null!;
+
+    public int DemographicId { get; set; }
+    public Demographic Demographic { get; set; } = null!;
 }
 
 public class Season

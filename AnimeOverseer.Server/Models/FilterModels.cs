@@ -35,7 +35,10 @@ public enum FilterField
     Season,
     Episodes,
     Rating,
-    Genres
+    Genres,
+    Themes,
+    Demographics,
+    Year
 }
 
 public enum FilterOperator

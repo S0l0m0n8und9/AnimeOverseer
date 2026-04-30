@@ -49,4 +49,18 @@ public class AnimeController : ControllerBase
         var genres = await _dataSource.GetAllGenresAsync();
         return Ok(genres);
     }
+
+    [HttpGet("themes")]
+    public async Task<IActionResult> GetThemes()
+    {
+        var themes = await _dataSource.GetAllThemesAsync();
+        return Ok(themes);
+    }
+
+    [HttpGet("demographics")]
+    public async Task<IActionResult> GetDemographics()
+    {
+        var demographics = await _dataSource.GetAllDemographicsAsync();
+        return Ok(demographics);
+    }
 }

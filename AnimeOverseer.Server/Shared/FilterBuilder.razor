@@ -60,6 +60,9 @@
                                 <option value="@FilterField.Episodes">Episodes</option>
                                 <option value="@FilterField.Rating">Rating</option>
                                 <option value="@FilterField.Genres">Genres</option>
+                                <option value="@FilterField.Themes">Themes</option>
+                                <option value="@FilterField.Demographics">Demographics</option>
+                                <option value="@FilterField.Year">Year</option>
                             </select>
 
                             <select class="form-select condition-op"
@@ -83,15 +86,15 @@
                                     }
                                 </select>
                             }
-                            else if (IsGenreSelectField(cond) && AvailableGenres.Count > 0)
+                            else if (IsTagSelectField(cond) && TagValuesFor(cond).Count > 0)
                             {
                                 <select class="form-select condition-value"
                                         value="@cond.Value"
                                         @onchange="e => ChangeValue(cond, e)">
                                     <option value="">Any</option>
-                                    @foreach (var genre in AvailableGenres)
+                                    @foreach (var tag in TagValuesFor(cond))
                                     {
-                                        <option value="@genre">@genre</option>
+                                        <option value="@tag">@tag</option>
                                     }
                                 </select>
                             }
@@ -135,6 +138,8 @@
     [Parameter] public FilterState State { get; set; } = new();
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public List<string> AvailableGenres { get; set; } = [];
+    [Parameter] public List<string> AvailableThemes { get; set; } = [];
+    [Parameter] public List<string> AvailableDemographics { get; set; } = [];
 
     private bool expanded = false;
 
@@ -214,9 +219,16 @@
         await Notify();
     }
 
+    private List<string> TagValuesFor(FilterCondition c) => c.Field switch
+    {
+        FilterField.Themes       => AvailableThemes,
+        FilterField.Demographics => AvailableDemographics,
+        _                        => AvailableGenres
+    };
+
     private static List<FilterOperator> OperatorsFor(FilterField field) => field switch
     {
-        FilterField.Episodes or FilterField.Rating => [
+        FilterField.Episodes or FilterField.Rating or FilterField.Year => [
             FilterOperator.Equals,
             FilterOperator.NotEquals,
             FilterOperator.GreaterThan,
@@ -258,17 +270,18 @@
     private static bool IsSelectField(FilterField f) =>
         f is FilterField.Type or FilterField.Status or FilterField.Season;
 
-    private static bool IsGenreSelectField(FilterCondition c) =>
-        c.Field == FilterField.Genres &&
+    private static bool IsTagSelectField(FilterCondition c) =>
+        c.Field is FilterField.Genres or FilterField.Themes or FilterField.Demographics &&
         c.Operator is FilterOperator.Equals or FilterOperator.NotEquals;
 
     private static bool IsNumberField(FilterField f) =>
-        f is FilterField.Episodes or FilterField.Rating;
+        f is FilterField.Episodes or FilterField.Rating or FilterField.Year;
 
     private static string PlaceholderFor(FilterField f) => f switch
     {
         FilterField.Episodes => "e.g. 12",
         FilterField.Rating   => "e.g. 7.5",
+        FilterField.Year     => "e.g. 2024",
         _                    => "Value..."
     };
 

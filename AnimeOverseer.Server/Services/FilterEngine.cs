@@ -41,19 +41,22 @@ public static class FilterEngine
             FilterField.Season       => MatchText(anime.Season?.Name ?? "", c.Operator, val),
             FilterField.Episodes     => MatchNumber((double?)anime.Episodes, c.Operator, val),
             FilterField.Rating       => MatchNumber((double?)anime.Rating, c.Operator, val),
-            FilterField.Genres       => MatchGenres(anime, c.Operator, val),
+            FilterField.Genres       => MatchTags(anime.AnimeGenres.Select(ag => ag.Genre?.Name ?? ""), c.Operator, val),
+            FilterField.Themes       => MatchTags(anime.AnimeThemes.Select(at => at.Theme?.Name ?? ""), c.Operator, val),
+            FilterField.Demographics => MatchTags(anime.AnimeDemographics.Select(ad => ad.Demographic?.Name ?? ""), c.Operator, val),
+            FilterField.Year         => MatchNumber((double?)anime.Season?.Year, c.Operator, val),
             _                        => true
         };
     }
 
-    private static bool MatchGenres(Anime anime, FilterOperator op, string val)
+    private static bool MatchTags(IEnumerable<string> names, FilterOperator op, string val)
     {
-        var names = anime.AnimeGenres.Select(ag => ag.Genre?.Name ?? "").ToList();
+        var list = names.ToList();
         return op switch
         {
-            FilterOperator.NotContains => names.All(n => !n.Contains(val, StringComparison.OrdinalIgnoreCase)),
-            FilterOperator.NotEquals   => names.All(n => !n.Equals(val, StringComparison.OrdinalIgnoreCase)),
-            _                          => names.Any(n => MatchText(n, op, val))
+            FilterOperator.NotContains => list.All(n => !n.Contains(val, StringComparison.OrdinalIgnoreCase)),
+            FilterOperator.NotEquals   => list.All(n => !n.Equals(val, StringComparison.OrdinalIgnoreCase)),
+            _                          => list.Any(n => MatchText(n, op, val))
         };
     }
 

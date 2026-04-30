@@ -30,7 +30,10 @@
             </div>
         </div>
 
-        <FilterBuilder State="filterState" OnChanged="OnFilterChanged" AvailableGenres="AvailableGenres" />
+        <FilterBuilder State="filterState" OnChanged="OnFilterChanged"
+            AvailableGenres="AvailableGenres"
+            AvailableThemes="AvailableThemes"
+            AvailableDemographics="AvailableDemographics" />
         <SortBuilder State="sortState" OnChanged="OnSortChanged" />
     </div>
 
@@ -117,14 +120,15 @@
     private bool isLoadingMore = false;
     private bool _ownNavigation = false;
 
-    private List<Anime> DisplayedAnimes => SortEngine.Apply(FilterEngine.Apply(allAnimes, filterState), sortState);
+    private List<Anime> DisplayedAnimes => SortEngine.Apply(
+        filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery)
+            ? allAnimes
+            : FilterEngine.Apply(allAnimes, filterState),
+        sortState);
 
-    private List<string> AvailableGenres => allAnimes
-        .SelectMany(a => a.AnimeGenres.Select(ag => ag.Genre?.Name ?? ""))
-        .Where(n => !string.IsNullOrEmpty(n))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderBy(n => n)
-        .ToList();
+    private List<string> AvailableGenres { get; set; } = [];
+    private List<string> AvailableThemes { get; set; } = [];
+    private List<string> AvailableDemographics { get; set; } = [];
 
     // ── Lifecycle ────────────────────────────────────────────
 
@@ -132,6 +136,7 @@
     {
         NavManager.LocationChanged += OnLocationChanged;
         await RestoreFromUrl(NavManager.Uri);
+        await LoadTagsAsync();
     }
 
     public void Dispose()
@@ -170,6 +175,8 @@
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
+        else if (filterState.IsActive)
+            await LoadFiltered();
         else
             await LoadRecent();
     }
@@ -218,13 +225,11 @@
         StateHasChanged();
         try
         {
-            var skip = append ? allAnimes.Count : 0;
+            var skip  = append ? allAnimes.Count : 0;
             var items = await AnimeDataSource.GetRecentAsync(skip, pageSize);
-            totalCount = await AnimeDataSource.GetTotalCountAsync();
-            if (append)
-                allAnimes.AddRange(items);
-            else
-                allAnimes = items;
+            if (!append) totalCount = await AnimeDataSource.GetTotalCountAsync();
+            if (append) allAnimes.AddRange(items);
+            else        allAnimes = items;
         }
         catch (Exception ex)
         {
@@ -236,6 +241,51 @@
             isLoading = false;
             isLoadingMore = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task LoadFiltered(bool append = false)
+    {
+        if (append) isLoadingMore = true;
+        else isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var skip  = append ? allAnimes.Count : 0;
+            var items = await AnimeDataSource.GetFilteredAsync(filterState, skip, pageSize);
+            if (!append) totalCount = await AnimeDataSource.GetFilteredCountAsync(filterState);
+            if (append) allAnimes.AddRange(items);
+            else        allAnimes = items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching filtered anime: {ex.Message}");
+            if (!append) allAnimes = new();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingMore = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadTagsAsync()
+    {
+        try
+        {
+            var genres  = AnimeDataSource.GetGenreNamesAsync();
+            var themes  = AnimeDataSource.GetThemeNamesAsync();
+            var demogs  = AnimeDataSource.GetDemographicNamesAsync();
+            await Task.WhenAll(genres, themes, demogs);
+            AvailableGenres       = genres.Result;
+            AvailableThemes       = themes.Result;
+            AvailableDemographics = demogs.Result;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tags: {ex.Message}");
         }
     }
 
@@ -258,7 +308,13 @@
 
     // ── User actions ─────────────────────────────────────────
 
-    private async Task LoadMore() => await LoadRecent(append: true);
+    private async Task LoadMore()
+    {
+        if (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery))
+            await LoadFiltered(append: true);
+        else
+            await LoadRecent(append: true);
+    }
 
     private async Task OnPageSizeChanged(ChangeEventArgs e)
     {
@@ -267,7 +323,10 @@
         allAnimes  = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadRecent();
+        if (filterState.IsActive)
+            await LoadFiltered();
+        else
+            await LoadRecent();
     }
 
     private async Task SearchAnime()
@@ -277,14 +336,21 @@
         PushUrl(replace: false);
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
+        else if (filterState.IsActive)
+            await LoadFiltered();
         else
             await LoadRecent();
     }
 
-    private void OnFilterChanged()
+    private async Task OnFilterChanged()
     {
+        allAnimes  = new();
+        totalCount = 0;
         PushUrl(replace: true);
-        StateHasChanged();
+        if (filterState.IsActive)
+            await LoadFiltered();
+        else
+            await LoadRecent();
     }
 
     private void OnSortChanged()

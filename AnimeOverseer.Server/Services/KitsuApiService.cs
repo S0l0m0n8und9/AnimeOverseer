@@ -94,27 +94,15 @@ public class KitsuApiService : IAnimeDataSource
     public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId, bool forceRefresh = false) => Task.FromResult(new List<AnimeRelation>());
     public Task<List<Anime>> GetRecentAsync(int skip, int take) => Task.FromResult(new List<Anime>());
     public Task<int> GetTotalCountAsync() => Task.FromResult(0);
+    public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => Task.FromResult(new List<Anime>());
+    public Task<int> GetFilteredCountAsync(FilterState state) => Task.FromResult(0);
+    public Task<List<string>> GetGenreNamesAsync() => Task.FromResult(new List<string>());
+    public Task<List<string>> GetThemeNamesAsync() => Task.FromResult(new List<string>());
+    public Task<List<string>> GetDemographicNamesAsync() => Task.FromResult(new List<string>());
 
-    public Task<List<Genre>> GetAllGenresAsync()
-    {
-        var genres = new List<Genre>
-        {
-            new() { Id = 1, Name = "Action" },
-            new() { Id = 2, Name = "Adventure" },
-            new() { Id = 3, Name = "Comedy" },
-            new() { Id = 4, Name = "Drama" },
-            new() { Id = 5, Name = "Fantasy" },
-            new() { Id = 6, Name = "Horror" },
-            new() { Id = 7, Name = "Mystery" },
-            new() { Id = 8, Name = "Romance" },
-            new() { Id = 9, Name = "Sci-Fi" },
-            new() { Id = 10, Name = "Slice of Life" },
-            new() { Id = 11, Name = "Sports" },
-            new() { Id = 12, Name = "Supernatural" },
-            new() { Id = 13, Name = "Thriller" }
-        };
-        return Task.FromResult(genres);
-    }
+    public Task<List<Genre>> GetAllGenresAsync() => Task.FromResult(new List<Genre>());
+    public Task<List<Theme>> GetAllThemesAsync() => Task.FromResult(new List<Theme>());
+    public Task<List<Demographic>> GetAllDemographicsAsync() => Task.FromResult(new List<Demographic>());
 
     private Anime MapFromKitsu(JsonElement element, int year, string season)
     {

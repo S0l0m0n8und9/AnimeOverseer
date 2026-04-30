@@ -46,6 +46,8 @@ public class AnimeCacheService : IAnimeDataSource
             var cached = await _db.Animes
                 .Include(a => a.Season)
                 .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+                .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
+                .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
                 .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null && a.CachedAt > threshold);
 
             if (cached != null) return cached;
@@ -61,6 +63,8 @@ public class AnimeCacheService : IAnimeDataSource
             var existing = await _db.Animes
                 .Include(a => a.Season)
                 .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+                .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
+                .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
                 .FirstOrDefaultAsync(a => a.MALId == anime.MALId);
             if (existing != null)
             {
@@ -83,9 +87,7 @@ public class AnimeCacheService : IAnimeDataSource
 
     public async Task<List<Anime>> GetRecentAsync(int skip, int take)
     {
-        return await _db.Animes
-            .Include(a => a.Season)
-            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+        return await BaseQuery()
             .OrderByDescending(a => a.StartDate)
             .ThenByDescending(a => a.CachedAt)
             .Skip(skip)
@@ -93,9 +95,52 @@ public class AnimeCacheService : IAnimeDataSource
             .ToListAsync();
     }
 
+    private IQueryable<Anime> BaseQuery() => _db.Animes
+        .Include(a => a.Season)
+        .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+        .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
+        .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic);
+
     public async Task<int> GetTotalCountAsync() => await _db.Animes.CountAsync();
 
+    public async Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take)
+    {
+        var query = BaseQuery();
+        query = FilterQueryBuilder.Apply(query, state);
+        return await query
+            .OrderByDescending(a => a.StartDate)
+            .ThenByDescending(a => a.CachedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetFilteredCountAsync(FilterState state)
+    {
+        return await FilterQueryBuilder.Apply(BaseQuery(), state).CountAsync();
+    }
+
+    public async Task<List<string>> GetGenreNamesAsync() =>
+        (await _db.Genres.Select(g => g.Name).ToListAsync())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    public async Task<List<string>> GetThemeNamesAsync() =>
+        (await _db.Themes.Select(t => t.Name).ToListAsync())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    public async Task<List<string>> GetDemographicNamesAsync() =>
+        (await _db.Demographics.Select(d => d.Name).ToListAsync())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
+    public Task<List<Theme>> GetAllThemesAsync() => _jikan.GetAllThemesAsync();
+    public Task<List<Demographic>> GetAllDemographicsAsync() => _jikan.GetAllDemographicsAsync();
 
     public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId, bool forceRefresh = false)
     {
@@ -248,6 +293,8 @@ public class AnimeCacheService : IAnimeDataSource
         var all = await _db.Animes
             .Include(a => a.Season)
             .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
+            .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
+            .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
             .Where(a => a.Season.Year == year)
             .ToListAsync();
 
@@ -417,56 +464,112 @@ public class AnimeCacheService : IAnimeDataSource
 
     private async Task SyncGenresBatchAsync(List<Anime> sourceAnimes)
     {
-        var sourcesWithGenres = sourceAnimes
-            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 && a.AnimeGenres.Count > 0)
+        var sourcesWithData = sourceAnimes
+            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 &&
+                        (a.AnimeGenres.Count > 0 || a.AnimeThemes.Count > 0 || a.AnimeDemographics.Count > 0))
             .ToList();
-        if (sourcesWithGenres.Count == 0) return;
+        if (sourcesWithData.Count == 0) return;
 
-        // Collect all unique genre names
-        var allNames = sourcesWithGenres
-            .SelectMany(a => a.AnimeGenres.Select(ag => ag.Genre.Name.Trim()))
-            .Where(n => !string.IsNullOrEmpty(n))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // Load or create Genre rows — use TryAdd to survive any case-variant duplicates in the DB
-        var existingGenreRows = await _db.Genres
-            .Where(g => allNames.Contains(g.Name))
-            .ToListAsync();
-        var existing = new Dictionary<string, Genre>(StringComparer.OrdinalIgnoreCase);
-        foreach (var genre in existingGenreRows)
-            existing.TryAdd(genre.Name, genre);
-
-        foreach (var name in allNames.Where(n => !existing.ContainsKey(n)))
-        {
-            var g = new Genre { Name = name };
-            _db.Genres.Add(g);
-            existing[name] = g;
-        }
-        await _db.SaveChangesAsync();
-
-        // Load DB animes for these MAL IDs
-        var malIds = sourcesWithGenres.Select(a => a.MALId!.Value).ToList();
+        var malIds = sourcesWithData.Select(a => a.MALId!.Value).ToList();
         var dbAnimes = await _db.Animes
             .Where(a => a.MALId != null && malIds.Contains(a.MALId.Value))
             .ToListAsync();
         var dbByMalId = dbAnimes.ToDictionary(a => a.MALId!.Value);
-
-        // Remove old genre links and re-add
         var dbIds = dbAnimes.Select(a => a.Id).ToList();
-        var oldLinks = await _db.AnimeGenres.Where(ag => dbIds.Contains(ag.AnimeId)).ToListAsync();
-        _db.AnimeGenres.RemoveRange(oldLinks);
 
-        var addedLinks = new HashSet<(int AnimeId, int GenreId)>();
-        foreach (var source in sourcesWithGenres)
+        await SyncTagsAsync(
+            sourcesWithData,
+            dbByMalId,
+            dbIds,
+            a => a.AnimeGenres.Select(ag => ag.Genre.Name.Trim()),
+            names => _db.Genres.Where(g => names.Contains(g.Name)).ToListAsync(),
+            name => new Genre { Name = name },
+            (g, existing) => existing.TryAdd(g.Name, g),
+            (animeId, tag) => _db.AnimeGenres.Add(new AnimeGenre { AnimeId = animeId, GenreId = tag.Id }),
+            animeIds => _db.AnimeGenres.Where(ag => animeIds.Contains(ag.AnimeId)).ToListAsync(),
+            links => _db.AnimeGenres.RemoveRange(links));
+
+        await SyncTagsAsync(
+            sourcesWithData,
+            dbByMalId,
+            dbIds,
+            a => a.AnimeThemes.Select(at => at.Theme.Name.Trim()),
+            names => _db.Themes.Where(t => names.Contains(t.Name)).ToListAsync(),
+            name => new Theme { Name = name },
+            (t, existing) => existing.TryAdd(t.Name, t),
+            (animeId, tag) => _db.AnimeThemes.Add(new AnimeTheme { AnimeId = animeId, ThemeId = tag.Id }),
+            animeIds => _db.AnimeThemes.Where(at => animeIds.Contains(at.AnimeId)).ToListAsync(),
+            links => _db.AnimeThemes.RemoveRange(links));
+
+        await SyncTagsAsync(
+            sourcesWithData,
+            dbByMalId,
+            dbIds,
+            a => a.AnimeDemographics.Select(ad => ad.Demographic.Name.Trim()),
+            names => _db.Demographics.Where(d => names.Contains(d.Name)).ToListAsync(),
+            name => new Demographic { Name = name },
+            (d, existing) => existing.TryAdd(d.Name, d),
+            (animeId, tag) => _db.AnimeDemographics.Add(new AnimeDemographic { AnimeId = animeId, DemographicId = tag.Id }),
+            animeIds => _db.AnimeDemographics.Where(ad => animeIds.Contains(ad.AnimeId)).ToListAsync(),
+            links => _db.AnimeDemographics.RemoveRange(links));
+    }
+
+    private async Task SyncTagsAsync<TLink, TTag>(
+        List<Anime> sources,
+        Dictionary<int, Anime> dbByMalId,
+        List<int> dbIds,
+        Func<Anime, IEnumerable<string>> getNames,
+        Func<List<string>, Task<List<TTag>>> loadExisting,
+        Func<string, TTag> createTag,
+        Action<TTag, Dictionary<string, TTag>> addToDict,
+        Action<int, TTag> addLink,
+        Func<List<int>, Task<List<TLink>>> loadOldLinks,
+        Action<List<TLink>> removeLinks)
+        where TTag : class
+        where TLink : class
+    {
+        // Collect names from sources that have entries in this category
+        var sourcesWithTags = sources.Where(a => getNames(a).Any()).ToList();
+        if (sourcesWithTags.Count == 0) return;
+
+        var allNames = sourcesWithTags
+            .SelectMany(getNames)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var existingRows = await loadExisting(allNames);
+        var existing = new Dictionary<string, TTag>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tag in existingRows)
+            addToDict(tag, existing);
+
+        // Cast to access Name property via dynamic to keep the helper generic
+        foreach (var name in allNames.Where(n => !existing.ContainsKey(n)))
+        {
+            var tag = createTag(name);
+            _db.Add(tag);
+            existing[name] = tag;
+        }
+        await _db.SaveChangesAsync();
+
+        var affectedIds = sourcesWithTags
+            .Where(a => dbByMalId.ContainsKey(a.MALId!.Value))
+            .Select(a => dbByMalId[a.MALId!.Value].Id)
+            .ToList();
+
+        var oldLinks = await loadOldLinks(affectedIds);
+        removeLinks(oldLinks);
+
+        var addedLinks = new HashSet<(int, int)>();
+        foreach (var source in sourcesWithTags)
         {
             if (!dbByMalId.TryGetValue(source.MALId!.Value, out var dbAnime)) continue;
-            foreach (var ag in source.AnimeGenres.ToList())
+            foreach (var name in getNames(source))
             {
-                var name = ag.Genre.Name.Trim();
-                if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var genre)) continue;
-                if (!addedLinks.Add((dbAnime.Id, genre.Id))) continue;
-                _db.AnimeGenres.Add(new AnimeGenre { AnimeId = dbAnime.Id, GenreId = genre.Id });
+                if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var tag)) continue;
+                var tagId = (int)((dynamic)tag).Id;
+                if (!addedLinks.Add((dbAnime.Id, tagId))) continue;
+                addLink(dbAnime.Id, tag);
             }
         }
         await _db.SaveChangesAsync();
