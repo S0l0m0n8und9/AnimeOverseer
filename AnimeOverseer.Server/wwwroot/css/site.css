@@ -702,6 +702,18 @@ img {
     border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+.badge-theme {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.badge-demographic {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .genre-badges {
     display: flex;
     flex-wrap: wrap;

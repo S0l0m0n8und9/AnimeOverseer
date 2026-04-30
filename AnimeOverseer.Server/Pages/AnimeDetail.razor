@@ -82,6 +82,26 @@
                         </div>
                     }
 
+                    @if (anime.AnimeThemes.Count > 0)
+                    {
+                        <div class="genre-badges">
+                            @foreach (var at in anime.AnimeThemes)
+                            {
+                                <span class="badge badge-theme">@at.Theme.Name</span>
+                            }
+                        </div>
+                    }
+
+                    @if (anime.AnimeDemographics.Count > 0)
+                    {
+                        <div class="genre-badges">
+                            @foreach (var ad in anime.AnimeDemographics)
+                            {
+                                <span class="badge badge-demographic">@ad.Demographic.Name</span>
+                            }
+                        </div>
+                    }
+
                     <div class="rating-section">
                         @if (anime.Rating.HasValue)
                         {
