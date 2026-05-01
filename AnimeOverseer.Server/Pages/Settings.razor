@@ -59,19 +59,27 @@
 
                 @if (type == "Jikan")
                 {
-                    var currentYear = DateTime.UtcNow.Year;
                     <div style="margin-bottom:.5rem">
                         <div style="font-size:.78em;color:#aaa;margin-bottom:.3rem">Years</div>
-                        <div style="display:flex;flex-wrap:wrap;gap:.2rem .6rem">
-                            @foreach (var yr in Enumerable.Range(currentYear - 4, 6))
+                        <div style="max-height:130px;overflow-y:auto;border:1px solid #444;border-radius:4px;padding:.3rem .4rem;background:#1a1a1a">
+                            @foreach (var yr in JikanYearList())
                             {
                                 var y = yr;
-                                <label style="font-size:.82em;display:flex;align-items:center;gap:.25rem;cursor:pointer">
+                                <label style="font-size:.82em;display:flex;align-items:center;gap:.25rem;cursor:pointer;padding:.1rem 0">
                                     <input type="checkbox" checked="@_jikanYears.Contains(y)"
                                            @onchange="e => ToggleJikanYear(y, (bool)e.Value!)" />
                                     @y
                                 </label>
                             }
+                        </div>
+                        <div style="display:flex;gap:.3rem;margin-top:.3rem">
+                            <input class="form-input" style="flex:1;font-size:.82em;padding:.2rem .4rem"
+                                   type="number" min="1900" max="2200" placeholder="Add year…"
+                                   @bind="_jikanCustomYear" @bind:event="oninput"
+                                   @onkeydown="OnCustomYearKeyDown" />
+                            <button class="btn btn-secondary" style="font-size:.78em;padding:.2rem .5rem"
+                                    @onclick="AddCustomJikanYear"
+                                    disabled="@(!IsValidCustomYear())">Add</button>
                         </div>
                     </div>
                     <div style="margin-bottom:.75rem">
@@ -241,6 +249,7 @@
 
     private HashSet<int> _jikanYears = new() { DateTime.UtcNow.Year };
     private HashSet<string> _jikanSeasons = new(["spring", "summer", "fall", "winter"]);
+    private string _jikanCustomYear = "";
 
     private string _sonarrUrl = "", _sonarrKey = "";
     private string _radarrUrl = "", _radarrKey = "";
@@ -336,6 +345,30 @@
             StartPolling();
         }
         finally { _triggering = false; }
+    }
+
+    private IEnumerable<int> JikanYearList()
+    {
+        var current = DateTime.UtcNow.Year;
+        var standard = Enumerable.Range(1960, current - 1960 + 2);
+        return standard.Union(_jikanYears).OrderByDescending(y => y);
+    }
+
+    private bool IsValidCustomYear()
+        => int.TryParse(_jikanCustomYear, out var y) && y >= 1900 && y <= 2200;
+
+    private void AddCustomJikanYear()
+    {
+        if (int.TryParse(_jikanCustomYear, out var y) && y >= 1900 && y <= 2200)
+        {
+            _jikanYears.Add(y);
+            _jikanCustomYear = "";
+        }
+    }
+
+    private void OnCustomYearKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddCustomJikanYear();
     }
 
     private void ToggleJikanYear(int year, bool isChecked)
