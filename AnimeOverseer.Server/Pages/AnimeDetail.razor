@@ -4,6 +4,7 @@
 @using AnimeOverseer.Server.Services
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
+@inject MediaRequestService MediaRequestService
 
 <PageTitle>@(anime?.Title ?? "Loading...") - AnimeOverseer</PageTitle>
 
@@ -33,6 +34,26 @@
                     <span>Refresh</span>
                 }
             </button>
+            @if (anime.Type == "TV" || anime.Type == "Movie")
+            {
+                <button class="btn btn-request" @onclick="RequestAsync" disabled="@_isRequesting">
+                    @if (_isRequesting)
+                    {
+                        <span class="spinner-small"></span>
+                        <span>Requesting...</span>
+                    }
+                    else
+                    {
+                        <span>+ Request in @(anime.Type == "Movie" ? "Radarr" : "Sonarr")</span>
+                    }
+                </button>
+                @if (_requestResult.HasValue)
+                {
+                    <span class="request-result @(_requestResult.Value.Ok ? "result-ok" : "result-error")">
+                        @(_requestResult.Value.Ok ? "✓" : "✗") @_requestResult.Value.Msg
+                    </span>
+                }
+            }
         </div>
 
         <div class="detail-card">
@@ -223,6 +244,8 @@
     private bool isLoading = true;
     private bool isRefreshing = false;
     private bool isLoadingRelations = false;
+    private bool _isRequesting = false;
+    private (bool Ok, string Msg)? _requestResult;
 
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
 
@@ -288,6 +311,26 @@
         finally
         {
             isRefreshing = false;
+        }
+    }
+
+    private async Task RequestAsync()
+    {
+        _isRequesting = true;
+        _requestResult = null;
+        try
+        {
+            _requestResult = anime!.Type == "Movie"
+                ? await MediaRequestService.RequestInRadarrAsync(anime.Title)
+                : await MediaRequestService.RequestInSonarrAsync(anime.Title);
+        }
+        catch (Exception ex)
+        {
+            _requestResult = (false, ex.Message.Split('.')[0]);
+        }
+        finally
+        {
+            _isRequesting = false;
         }
     }
 

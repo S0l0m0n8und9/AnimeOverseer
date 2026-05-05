@@ -33,6 +33,7 @@ builder.Services.AddScoped<AnimeCacheService>();
 builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCacheService>());
 builder.Services.AddSingleton<ImageCacheService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<MediaRequestService>();
 builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<AnimeRefreshBackgroundService>();

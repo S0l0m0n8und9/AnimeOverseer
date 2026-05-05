@@ -1,5 +1,6 @@
 @using AnimeOverseer.Server.Models
 @inject NavigationManager NavManager
+@inject MediaRequestService MediaRequestService
 
 <div class="anime-card" @onclick="navigateToDetail">
     <div class="card-image-wrapper">
@@ -16,7 +17,32 @@
         <div class="card-overlay">
             @if (!string.IsNullOrEmpty(Anime.Type))
             {
-                <span class="type-badge">@Anime.Type</span>
+                @if (Anime.Type == "TV" || Anime.Type == "Movie")
+                {
+                    <div class="type-request-wrapper @(_requestResult.HasValue ? "has-result" : "")">
+                        <span class="type-badge-text">@Anime.Type</span>
+                        <button class="card-request-btn @(_requestResult.HasValue ? (_requestResult.Value.Ok ? "req-ok" : "req-err") : "")"
+                                @onclick="RequestAsync" @onclick:stopPropagation="true"
+                                disabled="@_isRequesting">
+                            @if (_isRequesting)
+                            {
+                                <span>•••</span>
+                            }
+                            else if (_requestResult.HasValue)
+                            {
+                                @(_requestResult.Value.Ok ? "✓ Added" : "✗ Error")
+                            }
+                            else
+                            {
+                                @($"+ {(Anime.Type == "Movie" ? "Radarr" : "Sonarr")}")
+                            }
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <span class="type-badge">@Anime.Type</span>
+                }
             }
             @if (Anime.Episodes.HasValue)
             {
@@ -53,6 +79,29 @@
 @code {
     [Parameter]
     public Anime Anime { get; set; } = default!;
+
+    private bool _isRequesting;
+    private (bool Ok, string Msg)? _requestResult;
+
+    private async Task RequestAsync()
+    {
+        _isRequesting = true;
+        _requestResult = null;
+        try
+        {
+            _requestResult = Anime.Type == "Movie"
+                ? await MediaRequestService.RequestInRadarrAsync(Anime.Title)
+                : await MediaRequestService.RequestInSonarrAsync(Anime.Title);
+        }
+        catch (Exception ex)
+        {
+            _requestResult = (false, ex.Message.Split('.')[0]);
+        }
+        finally
+        {
+            _isRequesting = false;
+        }
+    }
 
     private void navigateToDetail()
     {
