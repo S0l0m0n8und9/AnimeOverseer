@@ -303,10 +303,18 @@ public class AnimeCacheService : IAnimeDataSource
     public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null)
         => FetchAndCacheYear(year, seasons, onPageFetched);
 
-    // Public entry point for the daily airing refresh: fetch /seasons/now and upsert any changed records.
+    // Public entry point for the daily airing refresh: fetch /seasons/now + /seasons/upcoming and upsert any changed records.
     public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null)
     {
-        var animes = await _jikan.FetchSeasonNowPagesAsync(onPageFetched);
+        var nowTask = _jikan.FetchSeasonNowPagesAsync(onPageFetched);
+        var upcomingTask = _jikan.FetchSeasonUpcomingPagesAsync();
+        await Task.WhenAll(nowTask, upcomingTask);
+
+        var animes = nowTask.Result
+            .Concat(upcomingTask.Result)
+            .GroupBy(a => a.MALId)
+            .Select(g => g.First())
+            .ToList();
 
         // Assign season records derived from each anime's start date
         var groups = animes

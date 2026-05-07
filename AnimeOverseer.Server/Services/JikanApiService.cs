@@ -22,6 +22,9 @@ public class JikanApiService : IAnimeDataSource
     internal Task<List<Anime>> FetchSeasonNowPagesAsync(Func<int, int, Task>? onPageFetched = null)
         => FetchPagedAsync("https://api.jikan.moe/v4/seasons/now", onPageFetched);
 
+    internal Task<List<Anime>> FetchSeasonUpcomingPagesAsync(Func<int, int, Task>? onPageFetched = null)
+        => FetchPagedAsync("https://api.jikan.moe/v4/seasons/upcoming", onPageFetched);
+
     private async Task<List<Anime>> FetchPagedAsync(string baseUrl, Func<int, int, Task>? onPageFetched = null)
     {
         var animes = new List<Anime>();
