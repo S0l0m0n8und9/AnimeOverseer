@@ -36,7 +36,7 @@ builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<MediaRequestService>();
 builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<SyncService>();
-builder.Services.AddHostedService<AnimeRefreshBackgroundService>();
+builder.Services.AddHostedService<DailyAiringRefreshService>();
 builder.Services.AddHostedService<SyncJobRunnerService>();
 
 var app = builder.Build();

@@ -15,9 +15,14 @@ public class JikanApiService : IAnimeDataSource
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
         => await FetchSeasonPagesAsync(year, season);
 
-    // Internal paginated fetch; onPageFetched(pageNumber, animeCount) is awaited after each page.
-    internal async Task<List<Anime>> FetchSeasonPagesAsync(
+    internal Task<List<Anime>> FetchSeasonPagesAsync(
         int year, string season, Func<int, int, Task>? onPageFetched = null)
+        => FetchPagedAsync($"https://api.jikan.moe/v4/seasons/{year}/{season}", onPageFetched);
+
+    internal Task<List<Anime>> FetchSeasonNowPagesAsync(Func<int, int, Task>? onPageFetched = null)
+        => FetchPagedAsync("https://api.jikan.moe/v4/seasons/now", onPageFetched);
+
+    private async Task<List<Anime>> FetchPagedAsync(string baseUrl, Func<int, int, Task>? onPageFetched = null)
     {
         var animes = new List<Anime>();
         var page = 1;
@@ -25,8 +30,8 @@ public class JikanApiService : IAnimeDataSource
         {
             while (true)
             {
-                var response = await _httpClient.GetAsync(
-                    $"https://api.jikan.moe/v4/seasons/{year}/{season}?page={page}");
+                var sep = baseUrl.Contains('?') ? "&" : "?";
+                var response = await _httpClient.GetAsync($"{baseUrl}{sep}page={page}");
                 if (!response.IsSuccessStatusCode) break;
 
                 var json = await response.Content.ReadAsStringAsync();

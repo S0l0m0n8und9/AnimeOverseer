@@ -4,7 +4,6 @@ public class ImageCacheService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _cacheDirectory;
-    private static readonly TimeSpan ImageTtl = TimeSpan.FromDays(7);
 
     public ImageCacheService(IHttpClientFactory httpClientFactory, IWebHostEnvironment env)
     {
@@ -21,7 +20,7 @@ public class ImageCacheService
         var filePath = Path.Combine(_cacheDirectory, fileName);
         var webPath = $"/images/cache/{fileName}";
 
-        if (File.Exists(filePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(filePath) < ImageTtl)
+        if (File.Exists(filePath))
             return webPath;
 
         try

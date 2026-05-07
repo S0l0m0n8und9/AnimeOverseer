@@ -7,9 +7,6 @@ namespace AnimeOverseer.Server.Services;
 public class AnimeCacheService : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
-    private static readonly TimeSpan SeasonCacheTtl = TimeSpan.FromHours(12);
-    private static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(24);
-    private static readonly TimeSpan RelationCacheTtl = TimeSpan.FromDays(7);
 
     private readonly AnimeDbContext _db;
     private readonly JikanApiService _jikan;
@@ -42,13 +39,12 @@ public class AnimeCacheService : IAnimeDataSource
     {
         if (!forceRefresh)
         {
-            var threshold = DateTime.UtcNow.Subtract(DetailCacheTtl);
             var cached = await _db.Animes
                 .Include(a => a.Season)
                 .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
                 .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
                 .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
-                .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null && a.CachedAt > threshold);
+                .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null);
 
             if (cached != null) return cached;
         }
@@ -146,9 +142,8 @@ public class AnimeCacheService : IAnimeDataSource
     {
         if (!forceRefresh)
         {
-            var threshold = DateTime.UtcNow.Subtract(RelationCacheTtl);
             var cached = await _db.CachedAnimeRelations
-                .Where(r => r.RootMalId == rootMalId && r.CachedAt > threshold)
+                .Where(r => r.RootMalId == rootMalId)
                 .ToListAsync();
 
             if (cached.Count > 0)
@@ -283,12 +278,11 @@ public class AnimeCacheService : IAnimeDataSource
 
     private async Task<List<Anime>> LoadCachedYear(int year)
     {
-        var threshold = DateTime.UtcNow.Subtract(SeasonCacheTtl);
-        var hasRecent = await _db.Animes
+        var hasAny = await _db.Animes
             .Include(a => a.Season)
-            .AnyAsync(a => a.Season.Year == year && a.CachedAt != null && a.CachedAt > threshold);
+            .AnyAsync(a => a.Season.Year == year && a.CachedAt != null);
 
-        if (!hasRecent) return [];
+        if (!hasAny) return [];
 
         var all = await _db.Animes
             .Include(a => a.Season)
@@ -308,6 +302,55 @@ public class AnimeCacheService : IAnimeDataSource
     // Public entry point for SyncService: fetch only the specified seasons with per-page progress callback.
     public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null)
         => FetchAndCacheYear(year, seasons, onPageFetched);
+
+    // Public entry point for the daily airing refresh: fetch /seasons/now and upsert any changed records.
+    public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null)
+    {
+        var animes = await _jikan.FetchSeasonNowPagesAsync(onPageFetched);
+
+        // Assign season records derived from each anime's start date
+        var groups = animes
+            .GroupBy(a => (Year: a.StartDate?.Year ?? DateTime.UtcNow.Year, Season: GetSeasonFromDate(a.StartDate)))
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            var record = await GetOrCreateSeason(group.Key.Season, group.Key.Year);
+            foreach (var anime in group)
+                anime.SeasonId = record.Id;
+        }
+
+        var (aniListByMalId, aniListByTitle) = await FetchAniListByYearAsync(DateTime.UtcNow.Year);
+
+        foreach (var anime in animes.Where(NeedsEnrichment))
+        {
+            Anime? aniListMatch = null;
+            if (anime.MALId is > 0)
+                aniListByMalId.TryGetValue(anime.MALId.Value, out aniListMatch);
+            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.Title))
+                aniListByTitle.TryGetValue(anime.Title.Trim(), out aniListMatch);
+            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.OriginalTitle))
+                aniListByTitle.TryGetValue(anime.OriginalTitle.Trim(), out aniListMatch);
+            if (aniListMatch != null)
+                EnrichAnimeFields(anime, aniListMatch);
+        }
+
+        var imageTasks = animes
+            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 && !string.IsNullOrEmpty(a.ImageUrl))
+            .Select(async a => { a.LocalImagePath = await _imageCache.CacheImageAsync(a.ImageUrl, a.MALId!.Value); });
+        await Task.WhenAll(imageTasks);
+
+        await UpsertAnimesAsync(animes);
+    }
+
+    private static string GetSeasonFromDate(DateTime? date) =>
+        (date?.Month ?? DateTime.UtcNow.Month) switch
+        {
+            <= 3 => "winter",
+            <= 6 => "spring",
+            <= 9 => "summer",
+            _    => "fall"
+        };
 
     private async Task<List<Anime>> FetchAndCacheYear(int year,
         string[]? selectedSeasons = null, Func<int, int, Task>? onPageFetched = null)
@@ -564,7 +607,7 @@ public class AnimeCacheService : IAnimeDataSource
         foreach (var source in sourcesWithTags)
         {
             if (!dbByMalId.TryGetValue(source.MALId!.Value, out var dbAnime)) continue;
-            foreach (var name in getNames(source))
+            foreach (var name in getNames(source).ToList())
             {
                 if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var tag)) continue;
                 var tagId = (int)((dynamic)tag).Id;
