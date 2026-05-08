@@ -37,6 +37,7 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (rootFolder == null) return (false, "No root folders found in Sonarr");
 
         series["qualityProfileId"] = profileId.Value;
+        series["seriesType"] = "anime";
         series["rootFolderPath"] = rootFolder;
         series["monitored"] = true;
         series["addOptions"] = new JsonObject
@@ -101,6 +102,14 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         var resp = await client.GetAsync($"{baseUrl}/api/v3/qualityprofile");
         if (!resp.IsSuccessStatusCode) return null;
         var arr = await resp.Content.ReadFromJsonAsync<JsonArray>();
+
+        var profile = arr?.Where(p => p["name"]?.GetValue<string>() == "HD-1080p").FirstOrDefault();
+
+        if (profile != null)
+        {
+            return profile["id"]?.GetValue<int>();
+        }
+
         return arr?.Count > 0 ? arr[0]!["id"]?.GetValue<int>() : null;
     }
 
