@@ -6,6 +6,7 @@
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 @inject MediaRequestService MediaRequestService
+@inject MediaLibraryService MediaLibraryService
 
 <PageTitle>@(anime?.Title ?? "Loading...") - AnimeOverseer</PageTitle>
 
@@ -48,6 +49,10 @@
                         <span>+ Request in @(anime.Type == "Movie" ? "Radarr" : "Sonarr")</span>
                     }
                 </button>
+                @if (_inLibrary)
+                {
+                    <span class="in-library-badge">&#x2713; In Library</span>
+                }
                 @if (_requestResult.HasValue)
                 {
                     <span class="request-result @(_requestResult.Value.Ok ? "result-ok" : "result-error")">
@@ -256,6 +261,7 @@
     private (bool Ok, string Msg)? _requestResult;
     private bool _showPicker;
     private List<MediaLookupResult>? _pickerResults;
+    private bool _inLibrary;
 
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
 
@@ -269,7 +275,13 @@
     {
         try
         {
+            await MediaLibraryService.EnsureRefreshedAsync();
             anime = await AnimeDataSource.GetByIdAsync(Id);
+            if (anime != null)
+                _inLibrary = MediaLibraryService.IsInSonarr(anime.Title)
+                          || MediaLibraryService.IsInSonarr(anime.OriginalTitle)
+                          || MediaLibraryService.IsInRadarr(anime.Title)
+                          || MediaLibraryService.IsInRadarr(anime.OriginalTitle);
         }
         catch (Exception ex)
         {
@@ -365,6 +377,11 @@
             _requestResult = anime!.Type == "Movie"
                 ? await MediaRequestService.AddToRadarrAsync(selected.RawData)
                 : await MediaRequestService.AddToSonarrAsync(selected.RawData);
+            if (_requestResult.Value.Ok)
+            {
+                MediaLibraryService.Invalidate();
+                _inLibrary = true;
+            }
         }
         catch (Exception ex)
         {

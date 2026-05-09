@@ -34,6 +34,7 @@ builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCa
 builder.Services.AddSingleton<ImageCacheService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<MediaRequestService>();
+builder.Services.AddSingleton<MediaLibraryService>();
 builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<DailyAiringRefreshService>();

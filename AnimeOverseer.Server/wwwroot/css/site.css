@@ -1640,3 +1640,16 @@ img {
     padding: 1px 6px;
     width: fit-content;
 }
+
+.in-library-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent-light);
+    background: var(--accent-glow);
+    border-radius: 4px;
+    padding: 2px 7px;
+    white-space: nowrap;
+}
