@@ -3,8 +3,169 @@ using System.Text.Json.Nodes;
 
 namespace AnimeOverseer.Server.Services;
 
+public record MediaLookupResult(
+    string Title,
+    int? Year,
+    string? Overview,
+    string? PosterUrl,
+    bool AlreadyExists,
+    JsonObject RawData
+);
+
 public class MediaRequestService(SettingsService settings, IHttpClientFactory httpClientFactory)
 {
+    public async Task<(bool Ok, string Error, List<MediaLookupResult>? Results)> LookupSonarrAsync(string title)
+    {
+        var url = await settings.GetAsync("sonarr.url");
+        var key = await settings.GetAsync("sonarr.apikey");
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+            return (false, "Sonarr is not configured. Go to Settings.", null);
+
+        url = NormalizeUrl(url);
+
+        using var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        client.DefaultRequestHeaders.Add("X-Api-Key", key);
+
+        var lookupResp = await client.GetAsync($"{url}/api/v3/series/lookup?term={Uri.EscapeDataString(title)}");
+        if (!lookupResp.IsSuccessStatusCode)
+            return (false, $"Lookup failed: HTTP {(int)lookupResp.StatusCode}", null);
+
+        var results = await lookupResp.Content.ReadFromJsonAsync<JsonArray>();
+        if (results == null || results.Count == 0)
+            return (false, $"Not found in Sonarr for \"{title}\"", null);
+
+        var list = results
+            .OfType<JsonObject>()
+            .Select(s => new MediaLookupResult(
+                s["title"]?.GetValue<string>() ?? "",
+                s["year"]?.GetValue<int>(),
+                s["overview"]?.GetValue<string>(),
+                s["images"]?.AsArray()
+                    .OfType<JsonObject>()
+                    .FirstOrDefault(i => i["coverType"]?.GetValue<string>() == "poster")
+                    ?["remoteUrl"]?.GetValue<string>(),
+                s["id"]?.GetValue<int>() > 0,
+                s
+            ))
+            .ToList();
+
+        return (true, "", list);
+    }
+
+    public async Task<(bool Ok, string Error, List<MediaLookupResult>? Results)> LookupRadarrAsync(string title)
+    {
+        var url = await settings.GetAsync("radarr.url");
+        var key = await settings.GetAsync("radarr.apikey");
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+            return (false, "Radarr is not configured. Go to Settings.", null);
+
+        url = NormalizeUrl(url);
+
+        using var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        client.DefaultRequestHeaders.Add("X-Api-Key", key);
+
+        var lookupResp = await client.GetAsync($"{url}/api/v3/movie/lookup?term={Uri.EscapeDataString(title)}");
+        if (!lookupResp.IsSuccessStatusCode)
+            return (false, $"Lookup failed: HTTP {(int)lookupResp.StatusCode}", null);
+
+        var results = await lookupResp.Content.ReadFromJsonAsync<JsonArray>();
+        if (results == null || results.Count == 0)
+            return (false, $"Not found in Radarr for \"{title}\"", null);
+
+        var list = results
+            .OfType<JsonObject>()
+            .Select(m => new MediaLookupResult(
+                m["title"]?.GetValue<string>() ?? "",
+                m["year"]?.GetValue<int>(),
+                m["overview"]?.GetValue<string>(),
+                m["images"]?.AsArray()
+                    .OfType<JsonObject>()
+                    .FirstOrDefault(i => i["coverType"]?.GetValue<string>() == "poster")
+                    ?["remoteUrl"]?.GetValue<string>(),
+                m["id"]?.GetValue<int>() > 0,
+                m
+            ))
+            .ToList();
+
+        return (true, "", list);
+    }
+
+    public async Task<(bool Ok, string Msg)> AddToSonarrAsync(JsonObject series)
+    {
+        var url = await settings.GetAsync("sonarr.url");
+        var key = await settings.GetAsync("sonarr.apikey");
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+            return (false, "Sonarr is not configured. Go to Settings.");
+
+        url = NormalizeUrl(url);
+
+        using var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        client.DefaultRequestHeaders.Add("X-Api-Key", key);
+
+        if (series["id"]?.GetValue<int>() > 0)
+            return (false, "Already exists in Sonarr");
+
+        var profileId = await GetFirstProfileIdAsync(client, url);
+        if (profileId == null) return (false, "No quality profiles found in Sonarr");
+
+        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        if (rootFolder == null) return (false, "No root folders found in Sonarr");
+
+        series["qualityProfileId"] = profileId.Value;
+        series["seriesType"] = "anime";
+        series["rootFolderPath"] = rootFolder;
+        series["monitored"] = true;
+        series["addOptions"] = new JsonObject
+        {
+            ["monitor"] = "all",
+            ["searchForMissingEpisodes"] = true
+        };
+
+        var addResp = await client.PostAsJsonAsync($"{url}/api/v3/series", series);
+        return addResp.IsSuccessStatusCode
+            ? (true, "Added to Sonarr")
+            : (false, $"Sonarr error: HTTP {(int)addResp.StatusCode}");
+    }
+
+    public async Task<(bool Ok, string Msg)> AddToRadarrAsync(JsonObject movie)
+    {
+        var url = await settings.GetAsync("radarr.url");
+        var key = await settings.GetAsync("radarr.apikey");
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+            return (false, "Radarr is not configured. Go to Settings.");
+
+        url = NormalizeUrl(url);
+
+        using var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(10);
+        client.DefaultRequestHeaders.Add("X-Api-Key", key);
+
+        if (movie["id"]?.GetValue<int>() > 0)
+            return (false, "Already exists in Radarr");
+
+        var profileId = await GetFirstProfileIdAsync(client, url);
+        if (profileId == null) return (false, "No quality profiles found in Radarr");
+
+        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        if (rootFolder == null) return (false, "No root folders found in Radarr");
+
+        movie["qualityProfileId"] = profileId.Value;
+        movie["rootFolderPath"] = rootFolder;
+        movie["monitored"] = true;
+        movie["addOptions"] = new JsonObject
+        {
+            ["searchForMovie"] = true
+        };
+
+        var addResp = await client.PostAsJsonAsync($"{url}/api/v3/movie", movie);
+        return addResp.IsSuccessStatusCode
+            ? (true, "Added to Radarr")
+            : (false, $"Radarr error: HTTP {(int)addResp.StatusCode}");
+    }
+
     public async Task<(bool Ok, string Msg)> RequestInSonarrAsync(string title)
     {
         var url = await settings.GetAsync("sonarr.url");

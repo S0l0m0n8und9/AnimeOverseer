@@ -1,0 +1,55 @@
+@using AnimeOverseer.Server.Services
+
+<div class="modal-backdrop" @onclick="Cancel">
+    <div class="modal-content" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <h3>Select the correct @MediaType</h3>
+            <button class="modal-close" @onclick="Cancel">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            @foreach (var result in Results)
+            {
+                <div class="picker-item @(result.AlreadyExists ? "picker-exists" : "")" @onclick="() => Select(result)">
+                    @if (!string.IsNullOrEmpty(result.PosterUrl))
+                    {
+                        <img src="@result.PosterUrl" class="picker-thumb" alt="@result.Title poster" onerror="this.style.display='none'" />
+                    }
+                    <div class="picker-info">
+                        <div>
+                            <span class="picker-title">@result.Title</span>
+                            @if (result.Year.HasValue)
+                            {
+                                <span class="picker-year">@result.Year</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(result.Overview))
+                        {
+                            <p class="picker-overview">@result.Overview</p>
+                        }
+                        @if (result.AlreadyExists)
+                        {
+                            <span class="picker-exists-badge">Already in library</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<MediaLookupResult> Results { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public string MediaType { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback<MediaLookupResult?> OnSelected { get; set; }
+
+    private async Task Select(MediaLookupResult result) =>
+        await OnSelected.InvokeAsync(result);
+
+    private async Task Cancel() =>
+        await OnSelected.InvokeAsync(null);
+}

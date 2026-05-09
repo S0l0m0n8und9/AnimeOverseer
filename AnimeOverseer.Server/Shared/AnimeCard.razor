@@ -1,4 +1,5 @@
 @using AnimeOverseer.Server.Models
+@using AnimeOverseer.Server.Services
 @inject NavigationManager NavManager
 @inject MediaRequestService MediaRequestService
 
@@ -76,12 +77,21 @@
     </div>
 </div>
 
+@if (_showPicker && _pickerResults != null)
+{
+    <MediaPickerModal Results="_pickerResults"
+                      MediaType="@(Anime.Type == "Movie" ? "Movie" : "Series")"
+                      OnSelected="OnPickerSelected" />
+}
+
 @code {
     [Parameter]
     public Anime Anime { get; set; } = default!;
 
     private bool _isRequesting;
     private (bool Ok, string Msg)? _requestResult;
+    private bool _showPicker;
+    private List<MediaLookupResult>? _pickerResults;
 
     private async Task RequestAsync()
     {
@@ -89,9 +99,41 @@
         _requestResult = null;
         try
         {
+            var lookup = Anime.Type == "Movie"
+                ? await MediaRequestService.LookupRadarrAsync(Anime.Title)
+                : await MediaRequestService.LookupSonarrAsync(Anime.Title);
+
+            if (!lookup.Ok || lookup.Results == null)
+            {
+                _requestResult = (false, lookup.Error);
+                return;
+            }
+
+            _pickerResults = lookup.Results;
+            _showPicker = true;
+        }
+        catch (Exception ex)
+        {
+            _requestResult = (false, ex.Message.Split('.')[0]);
+        }
+        finally
+        {
+            _isRequesting = false;
+        }
+    }
+
+    private async Task OnPickerSelected(MediaLookupResult? selected)
+    {
+        _showPicker = false;
+        _pickerResults = null;
+        if (selected == null) return;
+
+        _isRequesting = true;
+        try
+        {
             _requestResult = Anime.Type == "Movie"
-                ? await MediaRequestService.RequestInRadarrAsync(Anime.Title)
-                : await MediaRequestService.RequestInSonarrAsync(Anime.Title);
+                ? await MediaRequestService.AddToRadarrAsync(selected.RawData)
+                : await MediaRequestService.AddToSonarrAsync(selected.RawData);
         }
         catch (Exception ex)
         {
