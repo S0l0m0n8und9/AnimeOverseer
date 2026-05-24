@@ -39,6 +39,7 @@ builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<DailyAiringRefreshService>();
 builder.Services.AddHostedService<SyncJobRunnerService>();
+builder.Services.AddHostedService<NightlySyncService>();
 
 var app = builder.Build();
 
