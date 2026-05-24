@@ -278,10 +278,8 @@
             await MediaLibraryService.EnsureRefreshedAsync();
             anime = await AnimeDataSource.GetByIdAsync(Id);
             if (anime != null)
-                _inLibrary = MediaLibraryService.IsInSonarr(anime.Title)
-                          || MediaLibraryService.IsInSonarr(anime.OriginalTitle)
-                          || MediaLibraryService.IsInRadarr(anime.Title)
-                          || MediaLibraryService.IsInRadarr(anime.OriginalTitle);
+                _inLibrary = MediaLibraryService.IsInSonarr(anime)
+                          || MediaLibraryService.IsInRadarr(anime);
         }
         catch (Exception ex)
         {
