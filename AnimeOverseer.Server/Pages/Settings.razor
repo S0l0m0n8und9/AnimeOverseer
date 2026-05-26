@@ -160,13 +160,21 @@
         @* Sonarr *@
         <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
             <h3 style="margin-top:0;font-size:1.1rem">Sonarr</h3>
+            <!-- The text and password here are to prevent FF from auto filling my login credentials because it ignores autocomplete="off"-->
+            <input type="text" style="display:none">
+            <input type="password" style="display:none">
             <div style="margin-bottom:.75rem">
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">URL</label>
                 <input class="form-input" style="width:100%" @bind="_sonarrUrl" placeholder="http://sonarr:8989" />
             </div>
-            <div style="margin-bottom:.75rem">
-                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
-                <input class="form-input" style="width:100%" @bind="_sonarrKey" type="password" placeholder="••••••••" />
+            <div style="margin-bottom:.75rem;display:flex;align-items:center;autocomplete:off">                
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem;flex:1">API Key</label>
+                <div style="display:flex;align-items:center;gap:.25rem;">
+                    <input class="form-input" style="flex:1" @bind="_sonarrKey" type=@(_showSonarrKey ? "text" : "password") placeholder="••••••••" autocomplete="off" />
+                    <button class="btn btn-secondary" style="font-size:.75em;padding:.2rem .4rem" @onclick="() => _showSonarrKey = !_showSonarrKey">
+                        @(_showSonarrKey ? "Hide" : "Show")
+                    </button>
+                </div>
             </div>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SaveSonarr" style="font-size:.85em">Save</button>
@@ -184,9 +192,14 @@
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">URL</label>
                 <input class="form-input" style="width:100%" @bind="_radarrUrl" placeholder="http://radarr:7878" />
             </div>
-            <div style="margin-bottom:.75rem">
-                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
-                <input class="form-input" style="width:100%" @bind="_radarrKey" type="password" placeholder="••••••••" />
+            <div style="margin-bottom:.75rem;display:flex;align-items:center;autocomplete:off">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem;flex:1">API Key</label>
+                <div style="display:flex;align-items:center;gap:.25rem;">
+                    <input class="form-input" style="flex:1" @bind="_radarrKey" type=@(_showRadarrKey ? "text" : "password") placeholder="••••••••" autocomplete="off" />
+                    <button class="btn btn-secondary" style="font-size:.75em;padding:.2rem .4rem" @onclick="() => _showRadarrKey = !_showRadarrKey">
+                        @(_showRadarrKey ? "Hide" : "Show")
+                    </button>
+                </div>
             </div>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SaveRadarr" style="font-size:.85em">Save</button>
@@ -204,9 +217,14 @@
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
                 <input class="form-input" style="width:100%" @bind="_plexUrl" placeholder="http://plex:32400" />
             </div>
-            <div style="margin-bottom:.75rem">
-                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Token</label>
-                <input class="form-input" style="width:100%" @bind="_plexToken" type="password" placeholder="••••••••" />
+            <div style="margin-bottom:.75rem;display:flex;align-items:center;autocomplete:off">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem;flex:1">Token</label>
+                <div style="display:flex;align-items:center;gap:.25rem;">
+                    <input class="form-input" style="flex:1" @bind="_plexToken" type=@(_showPlexToken ? "text" : "password") placeholder="••••••••" autocomplete="off" />
+                    <button class="btn btn-secondary" style="font-size:.75em;padding:.2rem .4rem" @onclick="() => _showPlexToken = !_showPlexToken">
+                        @(_showPlexToken ? "Hide" : "Show")
+                    </button>
+                </div>
             </div>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SavePlex" style="font-size:.85em">Save</button>
@@ -224,9 +242,14 @@
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
                 <input class="form-input" style="width:100%" @bind="_jellyfinUrl" placeholder="http://jellyfin:8096" />
             </div>
-            <div style="margin-bottom:.75rem">
-                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">API Key</label>
-                <input class="form-input" style="width:100%" @bind="_jellyfinKey" type="password" placeholder="••••••••" />
+            <div style="margin-bottom:.75rem;display:flex;align-items:center;autocomplete:off">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem;flex:1">API Key</label>
+                <div style="display:flex;align-items:center;gap:.25rem;">
+                    <input class="form-input" style="flex:1" @bind="_jellyfinKey" type=@(_showJellyfinKey ? "text" : "password") placeholder="••••••••" autocomplete="off" />
+                    <button class="btn btn-secondary" style="font-size:.75em;padding:.2rem .4rem" @onclick="() => _showJellyfinKey = !_showJellyfinKey">
+                        @(_showJellyfinKey ? "Hide" : "Show")
+                    </button>
+                </div>
             </div>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SaveJellyfin" style="font-size:.85em">Save</button>
@@ -258,6 +281,12 @@
 
     private bool _sonarrTesting, _radarrTesting, _plexTesting, _jellyfinTesting;
     private (bool Ok, string Msg)? _sonarrResult, _radarrResult, _plexResult, _jellyfinResult;
+
+    // Visibility toggles for API keys
+    private bool _showSonarrKey = false;
+    private bool _showRadarrKey = false;
+    private bool _showPlexToken = false;
+    private bool _showJellyfinKey = false;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -447,15 +476,29 @@
         try
         {
             using var client = HttpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            client.Timeout = TimeSpan.FromSeconds(15); // Match the timeout used in actual service calls
             using var req = new HttpRequestMessage(HttpMethod.Get, $"{url}/api/v3/system/status");
             req.Headers.Add("X-Api-Key", apiKey);
             var res = await client.SendAsync(req);
             return res.IsSuccessStatusCode
                 ? (true, "Connected")
-                : (false, $"HTTP {(int)res.StatusCode}");
+                : (false, $"HTTP {(int)res.StatusCode} - {res.ReasonPhrase}");
         }
-        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+        catch (HttpRequestException ex)
+        {
+            // Handle network-related errors specifically
+            return (false, $"Network error: {ex.Message}");
+        }
+        catch (TaskCanceledException ex)
+        {
+            // Handle timeouts
+            return (false, "Connection timed out - check if the URL is correct and the service is reachable");
+        }
+        catch (Exception ex)
+        {
+            // Handle all other exceptions
+            return (false, $"Error: {ex.Message}");
+        }
     }
 
     private async Task<(bool Ok, string Msg)> TestPlexAsync(string url, string token)
@@ -464,16 +507,30 @@
         try
         {
             using var client = HttpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            client.Timeout = TimeSpan.FromSeconds(15); // Match the timeout used in actual service calls
             var testUrl = string.IsNullOrWhiteSpace(token)
                 ? $"{url}/identity"
                 : $"{url}/identity?X-Plex-Token={Uri.EscapeDataString(token)}";
             var res = await client.GetAsync(testUrl);
             return res.IsSuccessStatusCode
                 ? (true, "Connected")
-                : (false, $"HTTP {(int)res.StatusCode}");
+                : (false, $"HTTP {(int)res.StatusCode} - {res.ReasonPhrase}");
         }
-        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+        catch (HttpRequestException ex)
+        {
+            // Handle network-related errors specifically
+            return (false, $"Network error: {ex.Message}");
+        }
+        catch (TaskCanceledException ex)
+        {
+            // Handle timeouts
+            return (false, "Connection timed out - check if the URL is correct and the service is reachable");
+        }
+        catch (Exception ex)
+        {
+            // Handle all other exceptions
+            return (false, $"Error: {ex.Message}");
+        }
     }
 
     private async Task<(bool Ok, string Msg)> TestJellyfinAsync(string url, string apiKey)
@@ -482,16 +539,30 @@
         try
         {
             using var client = HttpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            client.Timeout = TimeSpan.FromSeconds(15); // Match the timeout used in actual service calls
             using var req = new HttpRequestMessage(HttpMethod.Get, $"{url}/System/Info/Public");
             if (!string.IsNullOrWhiteSpace(apiKey))
                 req.Headers.Add("X-MediaBrowser-Token", apiKey);
             var res = await client.SendAsync(req);
             return res.IsSuccessStatusCode
                 ? (true, "Connected")
-                : (false, $"HTTP {(int)res.StatusCode}");
+                : (false, $"HTTP {(int)res.StatusCode} - {res.ReasonPhrase}");
         }
-        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+        catch (HttpRequestException ex)
+        {
+            // Handle network-related errors specifically
+            return (false, $"Network error: {ex.Message}");
+        }
+        catch (TaskCanceledException ex)
+        {
+            // Handle timeouts
+            return (false, "Connection timed out - check if the URL is correct and the service is reachable");
+        }
+        catch (Exception ex)
+        {
+            // Handle all other exceptions
+            return (false, $"Error: {ex.Message}");
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
