@@ -101,10 +101,8 @@
 
     protected override void OnParametersSet()
     {
-        _inLibrary = MediaLibraryService.IsInSonarr(Anime.Title)
-                  || MediaLibraryService.IsInSonarr(Anime.OriginalTitle)
-                  || MediaLibraryService.IsInRadarr(Anime.Title)
-                  || MediaLibraryService.IsInRadarr(Anime.OriginalTitle);
+        _inLibrary = MediaLibraryService.IsInSonarr(Anime)
+                  || MediaLibraryService.IsInRadarr(Anime);
     }
 
     private async Task RequestAsync()
