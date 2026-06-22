@@ -449,13 +449,39 @@
             using var client = HttpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(5);
             using var req = new HttpRequestMessage(HttpMethod.Get, $"{url}/api/v3/system/status");
-            req.Headers.Add("X-Api-Key", apiKey);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                req.Headers.Add("X-Api-Key", apiKey);
             var res = await client.SendAsync(req);
-            return res.IsSuccessStatusCode
-                ? (true, "Connected")
-                : (false, $"HTTP {(int)res.StatusCode}");
+            if (res.IsSuccessStatusCode) return (true, "Connected");
+
+            var body = await SafeReadBodyAsync(res);
+            var reason = string.IsNullOrWhiteSpace(res.ReasonPhrase) ? "" : $" {res.ReasonPhrase}";
+            var detail = string.IsNullOrWhiteSpace(body) ? "" : $" — {body}";
+            return (false, $"HTTP {(int)res.StatusCode}{reason}{detail}");
         }
-        catch (Exception ex) { return (false, ex.Message.Split('.')[0]); }
+        catch (Exception ex) { return (false, FormatException(ex)); }
+    }
+
+    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage res)
+    {
+        try
+        {
+            var body = await res.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+            body = body.Trim();
+            const int max = 500;
+            return body.Length > max ? body[..max] + "…" : body;
+        }
+        catch { return string.Empty; }
+    }
+
+    private static string FormatException(Exception ex)
+    {
+        var messages = new List<string>();
+        for (var cur = ex; cur is not null; cur = cur.InnerException)
+            if (!string.IsNullOrWhiteSpace(cur.Message))
+                messages.Add(cur.Message.Trim());
+        return messages.Count == 0 ? ex.GetType().Name : string.Join(" → ", messages);
     }
 
     private async Task<(bool Ok, string Msg)> TestPlexAsync(string url, string token)
