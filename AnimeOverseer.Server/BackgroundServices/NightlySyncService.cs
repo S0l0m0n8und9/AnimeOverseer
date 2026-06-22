@@ -57,7 +57,7 @@ public class NightlySyncService : BackgroundService
             JobType = "Jikan",
             Status = "Queued",
             QueuedAt = DateTime.UtcNow,
-            Parameters = JsonSerializer.Serialize(new { years = new int[] { DateTime.UtcNow.Year }, seasons = new[] { "spring", "summer", "fall", "winter" } })
+            Parameters = JsonSerializer.Serialize(new { years = new int[] { DateTime.UtcNow.Year, DateTime.UtcNow.Year + 1, DateTime.UtcNow.Year + 2, DateTime.UtcNow.Year + 3 }, seasons = new[] { "spring", "summer", "fall", "winter" } })
         };
 
         db.SyncJobs.Add(job);

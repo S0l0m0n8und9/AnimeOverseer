@@ -12,8 +12,9 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
         await ResetStaleJobsAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
-        {
-            await Task.Delay(3000, stoppingToken);
+        { 
+            var millisecondsDelay = 3 * 60 * 1000;
+            await Task.Delay(millisecondsDelay, stoppingToken);
             try
             {
                 await ProcessNextJobAsync(stoppingToken);
