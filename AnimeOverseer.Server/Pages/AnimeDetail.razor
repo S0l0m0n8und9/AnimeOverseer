@@ -38,17 +38,20 @@
             </button>
             @if (anime.Type == "TV" || anime.Type == "Movie")
             {
-                <button class="btn btn-request" @onclick="RequestAsync" disabled="@_isRequesting">
-                    @if (_isRequesting)
-                    {
-                        <span class="spinner-small"></span>
-                        <span>Requesting...</span>
-                    }
-                    else
-                    {
-                        <span>+ Request in @(anime.Type == "Movie" ? "Radarr" : "Sonarr")</span>
-                    }
-                </button>
+                @if (!_inLibrary)
+                {
+                    <button class="btn btn-request" @onclick="RequestAsync" disabled="@_isRequesting">
+                        @if (_isRequesting)
+                        {
+                            <span class="spinner-small"></span>
+                            <span>Requesting...</span>
+                        }
+                        else
+                        {
+                            <span>+ Request in @(anime.Type == "Movie" ? "Radarr" : "Sonarr")</span>
+                        }
+                    </button>
+                }
                 @if (_inLibrary)
                 {
                     <span class="in-library-badge">&#x2713; In Library</span>

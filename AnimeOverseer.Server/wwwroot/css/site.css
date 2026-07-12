@@ -476,12 +476,13 @@ img {
 
 .card-overlay {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 6px;
+    right: 6px;
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: flex-end;
-    gap: 6px;
+    gap: 4px;
     z-index: 2;
 }
 
@@ -520,11 +521,7 @@ img {
 }
 
 .card-request-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(15, 23, 42, 0.85);
+    background: rgba(15, 23, 42, 0.94);
     backdrop-filter: blur(8px);
     border-radius: 4px;
     border: none;
@@ -535,10 +532,13 @@ img {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     white-space: nowrap;
-    padding: 3px 8px;
+    padding: 3px 7px;
     display: flex;
     align-items: center;
-    opacity: 0;
+    /* Keep the request action available without relying on hover. This is
+       especially important for touch devices, where the previous hover-only
+       affordance made non-library titles appear to have no request option. */
+    opacity: 1;
     transition: opacity 0.15s ease;
 }
 
@@ -550,12 +550,10 @@ img {
     cursor: wait;
 }
 
-.type-request-wrapper:hover .type-badge-text,
 .type-request-wrapper.has-result .type-badge-text {
     opacity: 0;
 }
 
-.type-request-wrapper:hover .card-request-btn,
 .type-request-wrapper.has-result .card-request-btn {
     opacity: 1;
 }
@@ -1644,12 +1642,16 @@ img {
 .in-library-badge {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--accent-light);
-    background: var(--accent-glow);
+    gap: 2px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: #dcfce7;
+    background: rgba(22, 101, 52, 0.96);
+    border: 1px solid rgba(134, 239, 172, 0.8);
     border-radius: 4px;
-    padding: 2px 7px;
+    padding: 2px 5px;
     white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }

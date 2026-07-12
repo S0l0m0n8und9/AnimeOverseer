@@ -168,4 +168,10 @@ public class AniListApiService : IAnimeDataSource
         try { return new DateTime(yEl.GetInt32(), mEl.GetInt32(), dEl.GetInt32()); }
         catch { return null; }
     }
+
+    public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take)
+        => Task.FromResult(new List<Anime>());
+
+    public Task<int> GetMostFavoritedCountAsync()
+        => Task.FromResult(0);
 }

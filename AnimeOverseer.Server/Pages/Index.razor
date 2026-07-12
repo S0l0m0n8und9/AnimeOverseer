@@ -12,6 +12,19 @@
 
 <div class="dashboard">
     <div class="controls-bar">
+        <div class="preset-filters-row">
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetAllAnime">All Anime</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopAiring">Top Airing</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopUpcoming">Top Upcoming</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopTVSeries">Top TV Series</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopMovies">Top Movies</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopOVAs">Top OVAs</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopONAs">Top ONAs</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopSpecials">Top Specials</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetMostPopular">Most Popular</button>
+            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetMostFavorited">Most Favorited</button>
+        </div>
+
         <div class="filters-row">
             <label class="filter-label" for="pagesize-select">Load:</label>
             <select id="pagesize-select" value="@pageSize" @onchange="OnPageSizeChanged" class="form-select" style="width:auto">
@@ -307,6 +320,32 @@
         finally { isLoading = false; StateHasChanged(); }
     }
 
+    private async Task LoadMostFavorited(bool append = false)
+    {
+        if (append) isLoadingMore = true;
+        else isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var skip  = append ? allAnimes.Count : 0;
+            var items = await AnimeDataSource.GetMostFavoritedAsync(skip, pageSize);
+            if (!append) totalCount = await AnimeDataSource.GetTotalCountAsync(); // Note: This might not be accurate for most favorited
+            if (append) allAnimes.AddRange(items);
+            else        allAnimes = items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading most favorited anime: {ex.Message}");
+            if (!append) allAnimes = new();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingMore = false;
+            StateHasChanged();
+        }
+    }
+
     // ── User actions ─────────────────────────────────────────
 
     private async Task LoadMore()
@@ -363,6 +402,203 @@
     private async Task HandleKeyDown(KeyboardEventArgs args)
     {
         if (args.Key == "Enter") await SearchAnime();
+    }
+
+    // ── Preset Filter Handlers ──────────────────────────────────────
+    private async Task SetPresetAllAnime()
+    {
+        filterState = new FilterState();
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadRecent();
+    }
+
+    private async Task SetPresetTopAiring()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Status,
+                    Operator = FilterOperator.Equals,
+                    Value = "Currently Airing"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopUpcoming()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Status,
+                    Operator = FilterOperator.Equals,
+                    Value = "Not Yet Aired"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopTVSeries()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Type,
+                    Operator = FilterOperator.Equals,
+                    Value = "TV"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopMovies()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Type,
+                    Operator = FilterOperator.Equals,
+                    Value = "Movie"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopOVAs()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Type,
+                    Operator = FilterOperator.Equals,
+                    Value = "OVA"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopONAs()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Type,
+                    Operator = FilterOperator.Equals,
+                    Value = "ONA"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetTopSpecials()
+    {
+        filterState = new FilterState
+        {
+            Groups = [new FilterGroup
+            {
+                Conditions = [new FilterCondition
+                {
+                    Field = FilterField.Type,
+                    Operator = FilterOperator.Equals,
+                    Value = "Special"
+                }]
+            }]
+        };
+        sortState = new SortState();
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadFiltered();
+    }
+
+    private async Task SetPresetMostPopular()
+    {
+        filterState = new FilterState();
+        sortState = new SortState
+        {
+            Criteria = [new SortCriterion
+            {
+                Field = SortField.Rating,
+                Direction = SortDirection.Descending
+            }]
+        };
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadRecent(); // LoadRecent respects sortState
+    }
+
+    private async Task SetPresetMostFavorited()
+    {
+        // For Most Favorited, we'll load anime sorted by request count
+        // This requires a special query since we don't have built-in sorting by Requests count
+        filterState = new FilterState();
+        sortState = new SortState(); // Clear sort since we're using custom loading
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+        await LoadMostFavorited();
     }
 
     // ── Serialisation ────────────────────────────────────────

@@ -19,27 +19,24 @@
         <div class="card-overlay">
             @if (!string.IsNullOrEmpty(Anime.Type))
             {
-                @if (Anime.Type == "TV" || Anime.Type == "Movie")
+                @if ((Anime.Type == "TV" || Anime.Type == "Movie") && !_inLibrary)
                 {
-                    <div class="type-request-wrapper @(_requestResult.HasValue ? "has-result" : "")">
-                        <span class="type-badge-text">@Anime.Type</span>
-                        <button class="card-request-btn @(_requestResult.HasValue ? (_requestResult.Value.Ok ? "req-ok" : "req-err") : "")"
-                                @onclick="RequestAsync" @onclick:stopPropagation="true"
-                                disabled="@_isRequesting">
-                            @if (_isRequesting)
-                            {
-                                <span>•••</span>
-                            }
-                            else if (_requestResult.HasValue)
-                            {
-                                @(_requestResult.Value.Ok ? "✓ Added" : "✗ Error")
-                            }
-                            else
-                            {
-                                @($"+ {(Anime.Type == "Movie" ? "Radarr" : "Sonarr")}")
-                            }
-                        </button>
-                    </div>
+                    <button class="card-request-btn @(_requestResult.HasValue ? (_requestResult.Value.Ok ? "req-ok" : "req-err") : "")"
+                            @onclick="RequestAsync" @onclick:stopPropagation="true"
+                            disabled="@_isRequesting">
+                        @if (_isRequesting)
+                        {
+                            <span>•••</span>
+                        }
+                        else if (_requestResult.HasValue)
+                        {
+                            @(_requestResult.Value.Ok ? "✓ Added" : "✗ Error")
+                        }
+                        else
+                        {
+                            @($"+ {(Anime.Type == "Movie" ? "Radarr" : "Sonarr")}")
+                        }
+                    </button>
                 }
                 else
                 {
@@ -52,7 +49,7 @@
             }
             @if (_inLibrary)
             {
-                <span class="in-library-badge">&#x2713; In Library</span>
+                <span class="in-library-badge" title="In Library" aria-label="In Library">&#x2713; Library</span>
             }
         </div>
     </div>

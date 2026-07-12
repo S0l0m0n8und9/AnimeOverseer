@@ -138,4 +138,10 @@ public class KitsuApiService : IAnimeDataSource
             SeasonId = 0
         };
     }
+
+    public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take)
+        => Task.FromResult(new List<Anime>());
+
+    public Task<int> GetMostFavoritedCountAsync()
+        => Task.FromResult(0);
 }

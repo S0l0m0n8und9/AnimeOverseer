@@ -134,9 +134,25 @@ public class AnimeCacheService : IAnimeDataSource
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    public async Task<List<Anime>> GetMostFavoritedAsync(int skip, int take)
+    {
+        return await BaseQuery()
+            .OrderByDescending(a => a.Requests.Count)
+            .ThenByDescending(a => a.StartDate)
+            .ThenByDescending(a => a.CachedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync();
+    }
+
     public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
     public Task<List<Theme>> GetAllThemesAsync() => _jikan.GetAllThemesAsync();
     public Task<List<Demographic>> GetAllDemographicsAsync() => _jikan.GetAllDemographicsAsync();
+
+    public async Task<int> GetMostFavoritedCountAsync()
+    {
+        return await _db.Animes.CountAsync();
+    }
 
     public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId, bool forceRefresh = false)
     {
