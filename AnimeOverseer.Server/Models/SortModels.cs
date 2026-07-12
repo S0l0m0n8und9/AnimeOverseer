@@ -20,7 +20,21 @@ public enum SortField
     Episodes,
     Rating,
     Status,
-    Season
+    Season,
+    OriginalTitle,
+    Synopsis,
+    Genres,
+    Themes,
+    Demographics,
+    Year,
+    MalId,
+    AniListId,
+    KitsuId,
+    Duration,
+    StartDate,
+    EndDate,
+    CachedAt,
+    InLibrary
 }
 
 public enum SortDirection

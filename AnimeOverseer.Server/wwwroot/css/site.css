@@ -1384,8 +1384,13 @@ img {
 }
 
 .condition-field { width: 130px; flex-shrink: 0; }
-.condition-op    { width: 120px; flex-shrink: 0; }
+.condition-op    { width: 180px; flex-shrink: 0; }
 .condition-value { flex: 1; min-width: 100px; }
+.condition-value--data {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+}
 
 /* Remove button */
 .condition-remove {

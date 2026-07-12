@@ -135,10 +135,17 @@
     private bool _ownNavigation = false;
 
     private List<Anime> DisplayedAnimes => SortEngine.Apply(
-        filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery)
+        filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery) && !HasLibraryFilter
             ? allAnimes
-            : FilterEngine.Apply(allAnimes, filterState),
-        sortState);
+            : FilterEngine.Apply(allAnimes, filterState, IsInLibrary),
+        sortState, IsInLibrary);
+
+    private bool HasLibraryFilter => filterState.Groups
+        .SelectMany(g => g.Conditions)
+        .Any(c => c.Field == FilterField.InLibrary && FilterState.IsActiveCondition(c));
+
+    private bool IsInLibrary(Anime anime) =>
+        MediaLibraryService.IsInSonarr(anime) || MediaLibraryService.IsInRadarr(anime);
 
     private List<string> AvailableGenres { get; set; } = [];
     private List<string> AvailableThemes { get; set; } = [];
@@ -265,6 +272,16 @@
         StateHasChanged();
         try
         {
+            if (HasLibraryFilter)
+            {
+                if (append) return;
+
+                var libraryFilterCandidates = await AnimeDataSource.GetFilteredAsync(new FilterState(), 0, int.MaxValue);
+                allAnimes = FilterEngine.Apply(libraryFilterCandidates, filterState, IsInLibrary);
+                totalCount = allAnimes.Count;
+                return;
+            }
+
             var skip  = append ? allAnimes.Count : 0;
             var items = await AnimeDataSource.GetFilteredAsync(filterState, skip, pageSize);
             if (!append) totalCount = await AnimeDataSource.GetFilteredCountAsync(filterState);

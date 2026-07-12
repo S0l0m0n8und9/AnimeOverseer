@@ -54,15 +54,24 @@
                                     @onchange="e => ChangeField(cond, e)">
                                 <option value="@FilterField.Title">Title</option>
                                 <option value="@FilterField.OriginalTitle">Original Title</option>
+                                <option value="@FilterField.Synopsis">Synopsis</option>
                                 <option value="@FilterField.Type">Type</option>
                                 <option value="@FilterField.Status">Status</option>
                                 <option value="@FilterField.Season">Season</option>
                                 <option value="@FilterField.Episodes">Episodes</option>
+                                <option value="@FilterField.Duration">Duration</option>
                                 <option value="@FilterField.Rating">Rating</option>
                                 <option value="@FilterField.Genres">Genres</option>
                                 <option value="@FilterField.Themes">Themes</option>
                                 <option value="@FilterField.Demographics">Demographics</option>
                                 <option value="@FilterField.Year">Year</option>
+                                <option value="@FilterField.MalId">MAL ID</option>
+                                <option value="@FilterField.AniListId">AniList ID</option>
+                                <option value="@FilterField.KitsuId">Kitsu ID</option>
+                                <option value="@FilterField.StartDate">Start Date</option>
+                                <option value="@FilterField.EndDate">End Date</option>
+                                <option value="@FilterField.CachedAt">Cached At</option>
+                                <option value="@FilterField.InLibrary">In Library</option>
                             </select>
 
                             <select class="form-select condition-op"
@@ -74,7 +83,11 @@
                                 }
                             </select>
 
-                            @if (IsSelectField(cond.Field))
+                            @if (IsDataOperator(cond.Operator))
+                            {
+                                <span class="condition-value condition-value--data">No value needed</span>
+                            }
+                            else if (IsSelectField(cond.Field))
                             {
                                 <select class="form-select condition-value"
                                         value="@cond.Value"
@@ -104,6 +117,12 @@
                                        placeholder="@PlaceholderFor(cond.Field)"
                                        step="@(cond.Field == FilterField.Rating ? "0.1" : "1")"
                                        min="0"
+                                       value="@cond.Value"
+                                       @onchange="e => ChangeValue(cond, e)" />
+                            }
+                            else if (IsDateField(cond.Field))
+                            {
+                                <input type="date" class="form-input condition-value"
                                        value="@cond.Value"
                                        @onchange="e => ChangeValue(cond, e)" />
                             }
@@ -228,7 +247,10 @@
 
     private static List<FilterOperator> OperatorsFor(FilterField field) => field switch
     {
-        FilterField.Episodes or FilterField.Rating or FilterField.Year => [
+        FilterField.Episodes or FilterField.Duration or FilterField.Rating or FilterField.Year or
+        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId => [
+            FilterOperator.ContainsData,
+            FilterOperator.DoesNotContainData,
             FilterOperator.Equals,
             FilterOperator.NotEquals,
             FilterOperator.GreaterThan,
@@ -236,13 +258,31 @@
             FilterOperator.LessThan,
             FilterOperator.LessThanOrEqual
         ],
+        FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt => [
+            FilterOperator.ContainsData,
+            FilterOperator.DoesNotContainData,
+            FilterOperator.Equals,
+            FilterOperator.NotEquals,
+            FilterOperator.GreaterThan,
+            FilterOperator.GreaterThanOrEqual,
+            FilterOperator.LessThan,
+            FilterOperator.LessThanOrEqual
+        ],
+        FilterField.InLibrary => [
+            FilterOperator.Equals,
+            FilterOperator.NotEquals
+        ],
         FilterField.Type or FilterField.Status or FilterField.Season => [
+            FilterOperator.ContainsData,
+            FilterOperator.DoesNotContainData,
             FilterOperator.Equals,
             FilterOperator.NotEquals,
             FilterOperator.Contains,
             FilterOperator.NotContains
         ],
         _ => [
+            FilterOperator.ContainsData,
+            FilterOperator.DoesNotContainData,
             FilterOperator.Contains,
             FilterOperator.NotContains,
             FilterOperator.StartsWith,
@@ -254,6 +294,8 @@
 
     private static string LabelFor(FilterOperator op) => op switch
     {
+        FilterOperator.ContainsData       => "contains data",
+        FilterOperator.DoesNotContainData => "does not contain data",
         FilterOperator.Contains           => "contains",
         FilterOperator.NotContains        => "not contains",
         FilterOperator.StartsWith         => "starts with",
@@ -268,20 +310,29 @@
     };
 
     private static bool IsSelectField(FilterField f) =>
-        f is FilterField.Type or FilterField.Status or FilterField.Season;
+        f is FilterField.Type or FilterField.Status or FilterField.Season or FilterField.InLibrary;
+
+    private static bool IsDataOperator(FilterOperator op) =>
+        op is FilterOperator.ContainsData or FilterOperator.DoesNotContainData;
 
     private static bool IsTagSelectField(FilterCondition c) =>
         c.Field is FilterField.Genres or FilterField.Themes or FilterField.Demographics &&
         c.Operator is FilterOperator.Equals or FilterOperator.NotEquals;
 
     private static bool IsNumberField(FilterField f) =>
-        f is FilterField.Episodes or FilterField.Rating or FilterField.Year;
+        f is FilterField.Episodes or FilterField.Duration or FilterField.Rating or FilterField.Year or
+        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId;
+
+    private static bool IsDateField(FilterField f) =>
+        f is FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt;
 
     private static string PlaceholderFor(FilterField f) => f switch
     {
         FilterField.Episodes => "e.g. 12",
+        FilterField.Duration => "e.g. 24",
         FilterField.Rating   => "e.g. 7.5",
         FilterField.Year     => "e.g. 2024",
+        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId => "e.g. 12345",
         _                    => "Value..."
     };
 
@@ -290,6 +341,7 @@
         FilterField.Type   => ["TV", "Movie", "OVA", "ONA", "Special", "Music"],
         FilterField.Status => ["Currently Airing", "Finished Airing", "Not yet aired"],
         FilterField.Season => ["spring", "summer", "fall", "winter"],
+        FilterField.InLibrary => ["Yes", "No"],
         _                  => []
     };
 }

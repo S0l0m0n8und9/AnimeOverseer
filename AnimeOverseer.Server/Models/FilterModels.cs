@@ -5,8 +5,12 @@ public class FilterState
     public GroupLogic TopLevelLogic { get; set; } = GroupLogic.And;
     public List<FilterGroup> Groups { get; set; } = [new FilterGroup()];
 
-    public bool IsActive => Groups.Any(g => g.Conditions.Any(c => !string.IsNullOrEmpty(c.Value)));
-    public int ActiveCount => Groups.Sum(g => g.Conditions.Count(c => !string.IsNullOrEmpty(c.Value)));
+    public bool IsActive => Groups.Any(g => g.Conditions.Any(IsActiveCondition));
+    public int ActiveCount => Groups.Sum(g => g.Conditions.Count(IsActiveCondition));
+
+    public static bool IsActiveCondition(FilterCondition condition) =>
+        condition.Operator is FilterOperator.ContainsData or FilterOperator.DoesNotContainData ||
+        !string.IsNullOrEmpty(condition.Value);
 }
 
 public class FilterGroup
@@ -38,7 +42,16 @@ public enum FilterField
     Genres,
     Themes,
     Demographics,
-    Year
+    Year,
+    Synopsis,
+    MalId,
+    AniListId,
+    KitsuId,
+    Duration,
+    StartDate,
+    EndDate,
+    CachedAt,
+    InLibrary
 }
 
 public enum FilterOperator
@@ -52,5 +65,7 @@ public enum FilterOperator
     GreaterThan,
     LessThan,
     GreaterThanOrEqual,
-    LessThanOrEqual
+    LessThanOrEqual,
+    ContainsData,
+    DoesNotContainData
 }

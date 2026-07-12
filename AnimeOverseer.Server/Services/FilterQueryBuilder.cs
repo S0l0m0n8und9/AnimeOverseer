@@ -9,7 +9,7 @@ public static class FilterQueryBuilder
     public static IQueryable<Anime> Apply(IQueryable<Anime> query, FilterState state)
     {
         var activeGroups = state.Groups
-            .Where(g => g.Conditions.Any(c => !string.IsNullOrEmpty(c.Value)))
+            .Where(g => g.Conditions.Any(FilterState.IsActiveCondition))
             .ToList();
 
         if (activeGroups.Count == 0) return query;
@@ -35,7 +35,7 @@ public static class FilterQueryBuilder
     private static Expression? BuildGroup(FilterGroup group, ParameterExpression param)
     {
         var exprs = group.Conditions
-            .Where(c => !string.IsNullOrEmpty(c.Value))
+            .Where(FilterState.IsActiveCondition)
             .Select(c => BuildCondition(c, param))
             .OfType<Expression>()
             .ToList();
@@ -52,7 +52,7 @@ public static class FilterQueryBuilder
     private static Expression? BuildCondition(FilterCondition c, ParameterExpression param)
     {
         var val = c.Value.Trim();
-        if (string.IsNullOrEmpty(val)) return null;
+        if (!FilterState.IsActiveCondition(c)) return null;
 
         var season = Expression.Property(param, "Season");
 
@@ -60,12 +60,21 @@ public static class FilterQueryBuilder
         {
             FilterField.Title        => TextExpr(Expression.Property(param, "Title"), c.Operator, val),
             FilterField.OriginalTitle => TextExpr(Expression.Property(param, "OriginalTitle"), c.Operator, val),
+            FilterField.Synopsis     => TextExpr(Expression.Property(param, "Synopsis"), c.Operator, val),
             FilterField.Type         => TextExpr(Expression.Property(param, "Type"), c.Operator, val),
             FilterField.Status       => TextExpr(Expression.Property(param, "Status"), c.Operator, val),
             FilterField.Season       => TextExpr(Expression.Property(season, "Name"), c.Operator, val),
             FilterField.Episodes     => NullableIntExpr(Expression.Property(param, "Episodes"), c.Operator, val),
+            FilterField.Duration     => NullableIntExpr(Expression.Property(param, "Duration"), c.Operator, val),
             FilterField.Rating       => NullableDecimalExpr(Expression.Property(param, "Rating"), c.Operator, val),
             FilterField.Year         => IntExpr(Expression.Property(season, "Year"), c.Operator, val),
+            FilterField.MalId        => NullableIntExpr(Expression.Property(param, "MALId"), c.Operator, val),
+            FilterField.AniListId    => NullableIntExpr(Expression.Property(param, "AniListId"), c.Operator, val),
+            FilterField.KitsuId      => NullableIntExpr(Expression.Property(param, "KitsuId"), c.Operator, val),
+            FilterField.StartDate    => NullableDateExpr(Expression.Property(param, "StartDate"), c.Operator, val),
+            FilterField.EndDate      => NullableDateExpr(Expression.Property(param, "EndDate"), c.Operator, val),
+            FilterField.CachedAt     => NullableDateExpr(Expression.Property(param, "CachedAt"), c.Operator, val),
+            FilterField.InLibrary    => null,
             FilterField.Genres       => TagExpr(param, "AnimeGenres", "Genre", c.Operator, val),
             FilterField.Themes       => TagExpr(param, "AnimeThemes", "Theme", c.Operator, val),
             FilterField.Demographics => TagExpr(param, "AnimeDemographics", "Demographic", c.Operator, val),
@@ -78,6 +87,12 @@ public static class FilterQueryBuilder
         var v = Expression.Constant(val);
         return op switch
         {
+            FilterOperator.ContainsData => Expression.AndAlso(
+                Expression.NotEqual(prop, Expression.Constant(null, typeof(string))),
+                Expression.NotEqual(prop, Expression.Constant(string.Empty))),
+            FilterOperator.DoesNotContainData => Expression.OrElse(
+                Expression.Equal(prop, Expression.Constant(null, typeof(string))),
+                Expression.Equal(prop, Expression.Constant(string.Empty))),
             FilterOperator.Contains    => StringCall(prop, "Contains", v),
             FilterOperator.NotContains => Expression.Not(StringCall(prop, "Contains", v)),
             FilterOperator.StartsWith  => StringCall(prop, "StartsWith", v),
@@ -90,8 +105,10 @@ public static class FilterQueryBuilder
 
     private static Expression NullableIntExpr(Expression prop, FilterOperator op, string val)
     {
-        if (!int.TryParse(val, out var target)) return Expression.Constant(true);
         var hasValue = Expression.Property(prop, "HasValue");
+        if (op == FilterOperator.ContainsData) return hasValue;
+        if (op == FilterOperator.DoesNotContainData) return Expression.Not(hasValue);
+        if (!int.TryParse(val, out var target)) return Expression.Constant(true);
         var value    = Expression.Property(prop, "Value");
         var cmp      = NumericCmp(value, op, Expression.Constant(target));
         return op == FilterOperator.NotEquals
@@ -101,10 +118,12 @@ public static class FilterQueryBuilder
 
     private static Expression NullableDecimalExpr(Expression prop, FilterOperator op, string val)
     {
+        var hasValue = Expression.Property(prop, "HasValue");
+        if (op == FilterOperator.ContainsData) return hasValue;
+        if (op == FilterOperator.DoesNotContainData) return Expression.Not(hasValue);
         if (!decimal.TryParse(val, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var target))
             return Expression.Constant(true);
-        var hasValue = Expression.Property(prop, "HasValue");
         var value    = Expression.Property(prop, "Value");
         var cmp      = NumericCmp(value, op, Expression.Constant(target));
         return op == FilterOperator.NotEquals
@@ -114,8 +133,25 @@ public static class FilterQueryBuilder
 
     private static Expression IntExpr(Expression prop, FilterOperator op, string val)
     {
+        if (op == FilterOperator.ContainsData) return Expression.NotEqual(prop, Expression.Constant(0));
+        if (op == FilterOperator.DoesNotContainData) return Expression.Equal(prop, Expression.Constant(0));
         if (!int.TryParse(val, out var target)) return Expression.Constant(true);
         return NumericCmp(prop, op, Expression.Constant(target));
+    }
+
+    private static Expression NullableDateExpr(Expression prop, FilterOperator op, string val)
+    {
+        var hasValue = Expression.Property(prop, "HasValue");
+        if (op == FilterOperator.ContainsData) return hasValue;
+        if (op == FilterOperator.DoesNotContainData) return Expression.Not(hasValue);
+        if (!DateTime.TryParse(val, out var target)) return Expression.Constant(true);
+
+        var value = Expression.Property(prop, "Value");
+        var date = Expression.Property(value, nameof(DateTime.Date));
+        var cmp = NumericCmp(date, op, Expression.Constant(target.Date));
+        return op == FilterOperator.NotEquals
+            ? Expression.OrElse(Expression.Not(hasValue), cmp)
+            : Expression.AndAlso(hasValue, cmp);
     }
 
     private static Expression NumericCmp(Expression field, FilterOperator op, Expression target) => op switch
@@ -139,6 +175,16 @@ public static class FilterQueryBuilder
         var nameProp   = Expression.Property(Expression.Property(itemParam, tagNavProp), "Name");
         var v          = Expression.Constant(val);
 
+        var anyMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Static | BindingFlags.Public)
+            .First(m => m.Name == "Any" && m.GetParameters().Length == 1)
+            .MakeGenericMethod(itemType);
+
+        if (op == FilterOperator.ContainsData)
+            return Expression.Call(anyMethod, collection);
+        if (op == FilterOperator.DoesNotContainData)
+            return Expression.Not(Expression.Call(anyMethod, collection));
+
         Expression matchBody = op switch
         {
             FilterOperator.Contains or FilterOperator.NotContains => StringCall(nameProp, "Contains", v),
@@ -147,12 +193,12 @@ public static class FilterQueryBuilder
             _                         => Expression.Equal(nameProp, v)
         };
 
-        var anyMethod = typeof(Enumerable)
+        var anyWithPredicateMethod = typeof(Enumerable)
             .GetMethods(BindingFlags.Static | BindingFlags.Public)
             .First(m => m.Name == "Any" && m.GetParameters().Length == 2)
             .MakeGenericMethod(itemType);
 
-        var anyExpr = Expression.Call(anyMethod, collection, Expression.Lambda(matchBody, itemParam));
+        var anyExpr = Expression.Call(anyWithPredicateMethod, collection, Expression.Lambda(matchBody, itemParam));
 
         return op is FilterOperator.NotContains or FilterOperator.NotEquals
             ? Expression.Not(anyExpr)
