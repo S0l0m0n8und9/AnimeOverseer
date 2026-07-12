@@ -41,6 +41,10 @@
                 <span class="search-icon">&#x1F50D;</span>
                 <input type="text" id="search-input" placeholder="Search anime by title..." @bind="searchQuery"
                        @bind:event="oninput" @onkeydown="HandleKeyDown" class="form-input search-input" />
+                @if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <button type="button" class="search-clear" @onclick="ClearSearch" aria-label="Clear search" title="Clear search">&#x2715;</button>
+                }
             </div>
         </div>
 
@@ -276,6 +280,7 @@
             {
                 if (append) return;
 
+                await MediaLibraryService.EnsureRefreshedAsync();
                 var libraryFilterCandidates = await AnimeDataSource.GetFilteredAsync(new FilterState(), 0, int.MaxValue);
                 allAnimes = FilterEngine.Apply(libraryFilterCandidates, filterState, IsInLibrary);
                 totalCount = allAnimes.Count;
@@ -394,6 +399,19 @@
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
         else if (filterState.IsActive)
+            await LoadFiltered();
+        else
+            await LoadRecent();
+    }
+
+    private async Task ClearSearch()
+    {
+        searchQuery = string.Empty;
+        allAnimes = new();
+        totalCount = 0;
+        PushUrl(replace: true);
+
+        if (filterState.IsActive)
             await LoadFiltered();
         else
             await LoadRecent();

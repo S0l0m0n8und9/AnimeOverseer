@@ -33,7 +33,46 @@ public class AnimeCacheService : IAnimeDataSource
         return await FetchAndCacheYear(year);
     }
 
-    public Task<List<Anime>> SearchAsync(string query) => _jikan.SearchAsync(query);
+    public async Task<List<Anime>> SearchAsync(string query)
+    {
+        var searchTerms = NormalizeSearchText(query);
+        if (searchTerms.Length == 0) return [];
+
+        // Search the catalogue first. Jikan's search endpoint is intentionally fuzzy and
+        // can rank an alternate name above the title displayed by the application.
+        var cached = await BaseQuery()
+            .Where(a => a.Title.Contains(query) ||
+                        (a.OriginalTitle != null && a.OriginalTitle.Contains(query)))
+            .ToListAsync();
+
+        // Also account for harmless presentation differences such as punctuation,
+        // apostrophes, and repeated whitespace (e.g. "Kaguya-sama" / "Kaguya sama").
+        var normalizedCached = BaseQuery()
+            .AsEnumerable()
+            .Where(a => TitleMatches(a.Title, searchTerms) || TitleMatches(a.OriginalTitle, searchTerms))
+            .ToList();
+
+        var remote = await _jikan.SearchAsync(query);
+
+        return cached
+            .Concat(normalizedCached)
+            .Concat(remote)
+            .GroupBy(a => a.MALId is > 0 ? $"mal:{a.MALId}" : $"title:{a.Title}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderByDescending(a => TitleMatches(a.Title, searchTerms))
+            .ThenByDescending(a => TitleMatches(a.OriginalTitle, searchTerms))
+            .ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool TitleMatches(string? title, string normalizedQuery) =>
+        !string.IsNullOrWhiteSpace(title) && NormalizeSearchText(title).Contains(normalizedQuery, StringComparison.Ordinal);
+
+    private static string NormalizeSearchText(string value) =>
+        new string(value
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
 
     public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {

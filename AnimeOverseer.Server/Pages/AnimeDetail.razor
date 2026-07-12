@@ -36,11 +36,11 @@
                     <span>Refresh</span>
                 }
             </button>
-            @if (anime.Type == "TV" || anime.Type == "Movie")
+            @if (!_inLibrary)
             {
-                @if (!_inLibrary)
+                @if (anime.Type == "TV" || anime.Type == "Movie")
                 {
-                    <button class="btn btn-request" @onclick="RequestAsync" disabled="@_isRequesting">
+                    <button class="btn btn-request" @onclick="() => RequestAsync()" disabled="@_isRequesting">
                         @if (_isRequesting)
                         {
                             <span class="spinner-small"></span>
@@ -52,16 +52,21 @@
                         }
                     </button>
                 }
-                @if (_inLibrary)
+                else
                 {
-                    <span class="in-library-badge">&#x2713; In Library</span>
+                    <button class="btn btn-request" @onclick="() => RequestAsync(useRadarr: false)" disabled="@_isRequesting">+ Request in Sonarr</button>
+                    <button class="btn btn-request" @onclick="() => RequestAsync(useRadarr: true)" disabled="@_isRequesting">+ Request in Radarr</button>
                 }
-                @if (_requestResult.HasValue)
-                {
-                    <span class="request-result @(_requestResult.Value.Ok ? "result-ok" : "result-error")">
-                        @(_requestResult.Value.Ok ? "✓" : "✗") @_requestResult.Value.Msg
-                    </span>
-                }
+            }
+            @if (_inLibrary)
+            {
+                <span class="in-library-badge">&#x2713; In Library</span>
+            }
+            @if (_requestResult.HasValue)
+            {
+                <span class="request-result @(_requestResult.Value.Ok ? "result-ok" : "result-error")">
+                    @(_requestResult.Value.Ok ? "✓" : "✗") @_requestResult.Value.Msg
+                </span>
             }
         </div>
 
@@ -248,7 +253,7 @@
 @if (_showPicker && _pickerResults != null)
 {
     <MediaPickerModal Results="_pickerResults"
-                      MediaType="@(anime?.Type == "Movie" ? "Movie" : "Series")"
+                      MediaType="@(_requestToRadarr ? "Movie" : "Series")"
                       OnSelected="OnPickerSelected" />
 }
 
@@ -265,6 +270,7 @@
     private bool _showPicker;
     private List<MediaLookupResult>? _pickerResults;
     private bool _inLibrary;
+    private bool _requestToRadarr;
 
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
 
@@ -337,13 +343,14 @@
         }
     }
 
-    private async Task RequestAsync()
+    private async Task RequestAsync(bool? useRadarr = null)
     {
         _isRequesting = true;
         _requestResult = null;
+        _requestToRadarr = useRadarr ?? anime!.Type == "Movie";
         try
         {
-            var lookup = anime!.Type == "Movie"
+            var lookup = _requestToRadarr
                 ? await MediaRequestService.LookupRadarrAsync(anime.Title)
                 : await MediaRequestService.LookupSonarrAsync(anime.Title);
 
@@ -375,7 +382,7 @@
         _isRequesting = true;
         try
         {
-            _requestResult = anime!.Type == "Movie"
+            _requestResult = _requestToRadarr
                 ? await MediaRequestService.AddToRadarrAsync(selected.RawData)
                 : await MediaRequestService.AddToSonarrAsync(selected.RawData);
             if (_requestResult.Value.Ok)

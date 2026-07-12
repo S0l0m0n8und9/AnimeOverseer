@@ -17,12 +17,12 @@
             </div>
         }
         <div class="card-overlay">
-            @if (!string.IsNullOrEmpty(Anime.Type))
+            @if (!_inLibrary)
             {
-                @if ((Anime.Type == "TV" || Anime.Type == "Movie") && !_inLibrary)
+                @if (Anime.Type == "TV" || Anime.Type == "Movie")
                 {
                     <button class="card-request-btn @(_requestResult.HasValue ? (_requestResult.Value.Ok ? "req-ok" : "req-err") : "")"
-                            @onclick="RequestAsync" @onclick:stopPropagation="true"
+                            @onclick="() => RequestAsync()" @onclick:stopPropagation="true"
                             disabled="@_isRequesting">
                         @if (_isRequesting)
                         {
@@ -40,8 +40,13 @@
                 }
                 else
                 {
-                    <span class="type-badge">@Anime.Type</span>
+                    <button class="card-request-btn" @onclick="() => RequestAsync(useRadarr: false)" @onclick:stopPropagation="true" disabled="@_isRequesting">+ Sonarr</button>
+                    <button class="card-request-btn" @onclick="() => RequestAsync(useRadarr: true)" @onclick:stopPropagation="true" disabled="@_isRequesting">+ Radarr</button>
                 }
+            }
+            else if (!string.IsNullOrEmpty(Anime.Type))
+            {
+                <span class="type-badge">@Anime.Type</span>
             }
             @if (Anime.Episodes.HasValue)
             {
@@ -82,7 +87,7 @@
 @if (_showPicker && _pickerResults != null)
 {
     <MediaPickerModal Results="_pickerResults"
-                      MediaType="@(Anime.Type == "Movie" ? "Movie" : "Series")"
+                      MediaType="@(_requestToRadarr ? "Movie" : "Series")"
                       OnSelected="OnPickerSelected" />
 }
 
@@ -95,20 +100,23 @@
     private bool _showPicker;
     private List<MediaLookupResult>? _pickerResults;
     private bool _inLibrary;
+    private bool _requestToRadarr;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
+        await MediaLibraryService.EnsureRefreshedAsync();
         _inLibrary = MediaLibraryService.IsInSonarr(Anime)
                   || MediaLibraryService.IsInRadarr(Anime);
     }
 
-    private async Task RequestAsync()
+    private async Task RequestAsync(bool? useRadarr = null)
     {
         _isRequesting = true;
         _requestResult = null;
+        _requestToRadarr = useRadarr ?? Anime.Type == "Movie";
         try
         {
-            var lookup = Anime.Type == "Movie"
+            var lookup = _requestToRadarr
                 ? await MediaRequestService.LookupRadarrAsync(Anime.Title)
                 : await MediaRequestService.LookupSonarrAsync(Anime.Title);
 
@@ -140,11 +148,14 @@
         _isRequesting = true;
         try
         {
-            _requestResult = Anime.Type == "Movie"
+            _requestResult = _requestToRadarr
                 ? await MediaRequestService.AddToRadarrAsync(selected.RawData)
                 : await MediaRequestService.AddToSonarrAsync(selected.RawData);
             if (_requestResult.Value.Ok)
+            {
                 MediaLibraryService.Invalidate();
+                _inLibrary = true;
+            }
         }
         catch (Exception ex)
         {
