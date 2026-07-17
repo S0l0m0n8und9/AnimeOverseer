@@ -9,11 +9,12 @@
         </a>
         <form class="header-search" @onsubmit="SubmitSearch" @onsubmit:preventDefault>
             <span class="header-search-icon" aria-hidden="true">&#x1F50D;</span>
-            <input type="search" @bind="searchQuery" placeholder="Search anime..." aria-label="Search anime" />
+            <input type="search" @bind="searchQuery" @bind:event="oninput" placeholder="Search anime..." aria-label="Search anime" />
             @if (!string.IsNullOrWhiteSpace(searchQuery))
             {
                 <button type="button" class="header-search-clear" @onclick="ClearSearch" aria-label="Clear search">&#x2715;</button>
             }
+            <button type="submit" class="header-search-submit">Search</button>
         </form>
         <div class="nav-links">
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-link active">
