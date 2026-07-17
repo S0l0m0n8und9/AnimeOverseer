@@ -355,8 +355,8 @@ public class AnimeCacheService : IAnimeDataSource
     }
 
     // Public entry point for SyncService: fetch only the specified seasons with per-page progress callback.
-    public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null)
-        => FetchAndCacheYear(year, seasons, onPageFetched);
+    public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+        => FetchAndCacheYear(year, seasons, onPageFetched, ct);
 
     // Public entry point for the daily airing refresh: fetch /seasons/now + /seasons/upcoming and upsert any changed records.
     public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null)
@@ -416,7 +416,7 @@ public class AnimeCacheService : IAnimeDataSource
         };
 
     private async Task<List<Anime>> FetchAndCacheYear(int year,
-        string[]? selectedSeasons = null, Func<int, int, Task>? onPageFetched = null)
+        string[]? selectedSeasons = null, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
     {
         var seasonsToFetch = selectedSeasons ?? AllSeasons;
 
@@ -424,11 +424,13 @@ public class AnimeCacheService : IAnimeDataSource
         var seasonAnimes = new List<(string Season, List<Anime> Animes)>();
         foreach (var s in seasonsToFetch)
         {
-            var animes = await _jikan.FetchSeasonPagesAsync(year, s, onPageFetched);
+            var animes = await _jikan.FetchSeasonPagesAsync(year, s, onPageFetched, ct);
             seasonAnimes.Add((s, animes));
             if (s != seasonsToFetch[^1])
-                await Task.Delay(400);
+                await Task.Delay(400, ct);
         }
+
+        ct.ThrowIfCancellationRequested();
 
         // Fetch AniList data for the same year in parallel (no strict rate limit)
         var (aniListByMalId, aniListByTitle) = await FetchAniListByYearAsync(year);

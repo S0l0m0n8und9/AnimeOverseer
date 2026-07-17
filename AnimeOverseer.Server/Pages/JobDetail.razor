@@ -75,6 +75,16 @@
                 <div style="margin-top:.35rem;font-size:.82em;color:#888">@FormatParameters(_job.Parameters)</div>
             }
 
+            @if (_job.Status is "Queued" or "Running")
+            {
+                <div style="margin-top:1rem">
+                    <button @onclick="CancelJobAsync" disabled="@_cancelling"
+                            style="padding:.35rem .85rem;background:#dc3545;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85em;opacity:@(_cancelling ? ".6" : "1")">
+                        @(_cancelling ? "Cancelling…" : "Cancel job")
+                    </button>
+                </div>
+            }
+
             @if (_job.Status == "Failed" && _job.ProcessedCount > 0)
             {
                 <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -137,6 +147,7 @@
     private List<SyncJobLog> _logs = new();
     private bool _notFound = false;
     private bool _continuing = false;
+    private bool _cancelling = false;
     private string _continueError = string.Empty;
     private CancellationTokenSource _cts = new();
 
@@ -196,6 +207,14 @@
         }
     }
 
+    private async Task CancelJobAsync()
+    {
+        _cancelling = true;
+        await SyncJobService.CancelAsync(_job!.Id);
+        await RefreshAsync();
+        _cancelling = false;
+    }
+
     private async Task RefreshAsync()
     {
         var job = await SyncJobService.GetByIdAsync(Id);
@@ -249,6 +268,7 @@
             "Queued"    => ("#6c757d", "Queued"),
             "Running"   => ("#0d6efd", "Running"),
             "Completed" => ("#198754", "Completed"),
+            "Cancelled" => ("#6c757d", "Cancelled"),
             _           => ("#dc3545", "Failed")
         };
         builder.OpenElement(0, "span");

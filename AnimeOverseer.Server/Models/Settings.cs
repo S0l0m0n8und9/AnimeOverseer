@@ -26,6 +26,7 @@ public class SyncJob
     public DateTime? FinishedAt { get; set; }
     public int ProcessedCount { get; set; }
     public int TotalCount { get; set; }
+    public bool CancellationRequested { get; set; }
     public string? Message { get; set; }
     public string? Parameters { get; set; }
 }

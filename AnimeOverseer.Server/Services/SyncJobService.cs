@@ -40,11 +40,36 @@ public class SyncJobService(AnimeDbContext db)
         return job;
     }
 
-    public async Task<List<SyncJob>> GetRecentAsync(int count = 30)
+    public async Task<bool> CancelAsync(int jobId)
+    {
+        var job = await db.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
+        if (job == null || job.Status is not ("Queued" or "Running")) return false;
+
+        if (job.Status == "Queued")
+        {
+            job.Status = "Cancelled";
+            job.Message = "Cancelled before starting";
+            job.FinishedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            job.CancellationRequested = true;
+            job.Message = "Cancellation requested";
+        }
+
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<List<SyncJob>> GetRecentAsync(int skip = 0, int count = 30)
         => await db.SyncJobs
             .OrderByDescending(j => j.QueuedAt)
+            .Skip(skip)
             .Take(count)
             .ToListAsync();
+
+    public Task<int> GetCountAsync()
+        => db.SyncJobs.CountAsync();
 
     public async Task<SyncJob?> GetByIdAsync(int id)
         => await db.SyncJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id);

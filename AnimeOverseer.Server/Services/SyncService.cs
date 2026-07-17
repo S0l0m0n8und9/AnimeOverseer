@@ -26,9 +26,10 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             // Uses SyncService's own db context — AnimeCacheService has its own isolated context.
             async Task OnPageFetched(int page, int count)
             {
-                if (ct.IsCancellationRequested) return;
+                ct.ThrowIfCancellationRequested();
                 job.ProcessedCount += count;
                 db.SyncJobs.Update(job);
+                db.Entry(job).Property(j => j.CancellationRequested).IsModified = false;
                 await db.SaveChangesAsync(CancellationToken.None);
             }
 
@@ -36,7 +37,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             // preventing ChangeTracker conflicts with this service's db instance.
             using var cacheScope = scopeFactory.CreateScope();
             var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
-            await cache.FetchAndCacheSeasonsAsync(year, seasons, OnPageFetched);
+            await cache.FetchAndCacheSeasonsAsync(year, seasons, OnPageFetched, ct);
 
             if (ct.IsCancellationRequested) break;
 
@@ -44,6 +45,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             // tracked entities so only the job update and log entry are saved here.
             db.ChangeTracker.Clear();
             db.SyncJobs.Update(job);
+            db.Entry(job).Property(j => j.CancellationRequested).IsModified = false;
             Log(job, $"Completed {year} — {job.ProcessedCount:N0} anime fetched so far", "Success");
             await db.SaveChangesAsync(ct);
         }
@@ -52,6 +54,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         {
             db.ChangeTracker.Clear();
             db.SyncJobs.Update(job);
+            db.Entry(job).Property(j => j.CancellationRequested).IsModified = false;
             Log(job, $"Sync complete — {job.ProcessedCount:N0} anime processed", "Success");
             await db.SaveChangesAsync(ct);
         }

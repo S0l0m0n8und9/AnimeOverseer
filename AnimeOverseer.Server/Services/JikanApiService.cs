@@ -16,8 +16,8 @@ public class JikanApiService : IAnimeDataSource
         => await FetchSeasonPagesAsync(year, season);
 
     internal Task<List<Anime>> FetchSeasonPagesAsync(
-        int year, string season, Func<int, int, Task>? onPageFetched = null)
-        => FetchPagedAsync($"https://api.jikan.moe/v4/seasons/{year}/{season}", onPageFetched);
+        int year, string season, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+        => FetchPagedAsync($"https://api.jikan.moe/v4/seasons/{year}/{season}", onPageFetched, ct);
 
     internal Task<List<Anime>> FetchSeasonNowPagesAsync(Func<int, int, Task>? onPageFetched = null)
         => FetchPagedAsync("https://api.jikan.moe/v4/seasons/now", onPageFetched);
@@ -25,7 +25,7 @@ public class JikanApiService : IAnimeDataSource
     internal Task<List<Anime>> FetchSeasonUpcomingPagesAsync(Func<int, int, Task>? onPageFetched = null)
         => FetchPagedAsync("https://api.jikan.moe/v4/seasons/upcoming", onPageFetched);
 
-    private async Task<List<Anime>> FetchPagedAsync(string baseUrl, Func<int, int, Task>? onPageFetched = null)
+    private async Task<List<Anime>> FetchPagedAsync(string baseUrl, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
     {
         var animes = new List<Anime>();
         var page = 1;
@@ -34,7 +34,7 @@ public class JikanApiService : IAnimeDataSource
             while (true)
             {
                 var sep = baseUrl.Contains('?') ? "&" : "?";
-                var response = await _httpClient.GetAsync($"{baseUrl}{sep}page={page}");
+                var response = await _httpClient.GetAsync($"{baseUrl}{sep}page={page}", ct);
                 if (!response.IsSuccessStatusCode) break;
 
                 var json = await response.Content.ReadAsStringAsync();
@@ -54,8 +54,12 @@ public class JikanApiService : IAnimeDataSource
                 if (!hasNextPage) break;
 
                 page++;
-                await Task.Delay(400); // ~3 req/sec Jikan rate limit
+                await Task.Delay(400, ct); // ~3 req/sec Jikan rate limit
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {

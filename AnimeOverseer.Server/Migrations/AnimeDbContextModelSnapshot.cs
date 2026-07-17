@@ -266,6 +266,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("CancellationRequested")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("JobType")
                         .IsRequired()
                         .HasColumnType("TEXT");

@@ -116,7 +116,19 @@
     }
     else
     {
-        <table style="width:100%;border-collapse:collapse;font-size:.9em;margin-bottom:2rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.5rem;font-size:.85em;color:#aaa">
+            <span>Showing @(((_jobsPage - 1) * _jobsPerPage) + 1)–@Math.Min(_jobsPage * _jobsPerPage, _totalJobs) of @_totalJobs jobs</span>
+            <label style="display:flex;align-items:center;gap:.4rem">
+                Jobs per page
+                <select @bind="_jobsPerPage" @bind:after="ChangePageSizeAsync" style="background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:4px;padding:.2rem .35rem">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </label>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.9em;margin-bottom:.75rem">
             <thead>
                 <tr style="border-bottom:1px solid #333;text-align:left">
                     <th style="padding:.4rem .6rem">Type</th>
@@ -150,6 +162,14 @@
                 }
             </tbody>
         </table>
+        @if (PageCount > 1)
+        {
+            <div style="display:flex;justify-content:center;align-items:center;gap:.5rem;margin-bottom:2rem">
+                <button class="btn btn-secondary" style="font-size:.85em;padding:.25rem .6rem" @onclick="() => GoToPageAsync(_jobsPage - 1)" disabled="@(_jobsPage == 1)">Previous</button>
+                <span style="font-size:.85em;color:#aaa">Page @_jobsPage of @PageCount</span>
+                <button class="btn btn-secondary" style="font-size:.85em;padding:.25rem .6rem" @onclick="() => GoToPageAsync(_jobsPage + 1)" disabled="@(_jobsPage == PageCount)">Next</button>
+            </div>
+        }
     }
 
     <!-- ══ Media Servers ════════════════════════════════════════════════ -->
@@ -267,6 +287,10 @@
     // ── State ─────────────────────────────────────────────────────────────
 
     private List<SyncJob> _jobs = new();
+    private List<SyncJob> _sourceJobs = new();
+    private int _totalJobs;
+    private int _jobsPage = 1;
+    private int _jobsPerPage = 10;
     private bool _triggering = false;
     private CancellationTokenSource _cts = new();
 
@@ -339,7 +363,25 @@
 
     private async Task LoadJobsAsync()
     {
-        _jobs = await SyncJobService.GetRecentAsync();
+        _totalJobs = await SyncJobService.GetCountAsync();
+        _jobsPage = Math.Min(_jobsPage, PageCount);
+        _jobs = await SyncJobService.GetRecentAsync((_jobsPage - 1) * _jobsPerPage, _jobsPerPage);
+        // Keep enough recent jobs for the data-source cards independently of the current history page.
+        _sourceJobs = await SyncJobService.GetRecentAsync(count: 30);
+    }
+
+    private int PageCount => Math.Max(1, (int)Math.Ceiling((double)_totalJobs / _jobsPerPage));
+
+    private async Task GoToPageAsync(int page)
+    {
+        _jobsPage = Math.Clamp(page, 1, PageCount);
+        await LoadJobsAsync();
+    }
+
+    private async Task ChangePageSizeAsync()
+    {
+        _jobsPage = 1;
+        await LoadJobsAsync();
     }
 
     private async Task LoadSettingsAsync()
@@ -594,10 +636,10 @@
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private SyncJob? IsActive(string type)
-        => _jobs.FirstOrDefault(j => j.JobType == type && j.Status is "Queued" or "Running");
+        => _sourceJobs.FirstOrDefault(j => j.JobType == type && j.Status is "Queued" or "Running");
 
     private SyncJob? LastJob(string type)
-        => _jobs.FirstOrDefault(j => j.JobType == type && j.Status is "Completed" or "Failed");
+        => _sourceJobs.FirstOrDefault(j => j.JobType == type && j.Status is "Completed" or "Failed" or "Cancelled");
 
     private static string NormalizeUrl(string url)
     {
@@ -634,6 +676,7 @@
             "Queued"    => ("#6c757d", "Queued"),
             "Running"   => ("#0d6efd", "Running"),
             "Completed" => ("#198754", "Completed"),
+            "Cancelled" => ("#6c757d", "Cancelled"),
             _           => ("#dc3545", "Failed")
         };
         builder.OpenElement(0, "span");

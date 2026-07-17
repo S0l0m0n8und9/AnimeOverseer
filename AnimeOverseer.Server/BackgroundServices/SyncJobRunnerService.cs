@@ -36,8 +36,8 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
 
         foreach (var job in stale)
         {
-            job.Status = "Failed";
-            job.Message = "Interrupted by server restart";
+            job.Status = job.CancellationRequested ? "Cancelled" : "Failed";
+            job.Message = job.CancellationRequested ? "Cancelled" : "Interrupted by server restart";
             job.FinishedAt = DateTime.UtcNow;
         }
 
@@ -65,20 +65,40 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
 
         var sync = scope.ServiceProvider.GetRequiredService<SyncService>();
 
+        using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var monitorCts = new CancellationTokenSource();
+        var jobCancellationRequested = false;
+        var cancellationMonitor = MonitorCancellationAsync(
+            job.Id,
+            jobCts,
+            monitorCts.Token,
+            () => jobCancellationRequested = true);
+
         try
         {
             await (job.JobType switch
             {
-                "Jikan"   => sync.RunJikanSyncAsync(job, ct),
-                "AniList" => sync.RunAniListSyncAsync(job, ct),
-                "Kitsu"   => sync.RunKitsuSyncAsync(job, ct),
+                "Jikan"   => sync.RunJikanSyncAsync(job, jobCts.Token),
+                "AniList" => sync.RunAniListSyncAsync(job, jobCts.Token),
+                "Kitsu"   => sync.RunKitsuSyncAsync(job, jobCts.Token),
                 _         => Task.CompletedTask
             });
 
-            job.Status = ct.IsCancellationRequested ? "Failed" : "Completed";
-            job.Message = ct.IsCancellationRequested
+            job.Status = jobCancellationRequested ? "Cancelled" : ct.IsCancellationRequested ? "Failed" : "Completed";
+            // Jikan's paginated API does not provide a total before the fetch starts.
+            // Once a job completes, the number processed is its actual total.
+            if (job.Status == "Completed" && job.TotalCount == 0)
+                job.TotalCount = job.ProcessedCount;
+            job.Message = jobCancellationRequested
+                ? "Cancelled"
+                : ct.IsCancellationRequested
                 ? "Cancelled"
                 : $"Processed {job.ProcessedCount} of {job.TotalCount}";
+        }
+        catch (OperationCanceledException) when (jobCancellationRequested)
+        {
+            job.Status = "Cancelled";
+            job.Message = "Cancelled";
         }
         catch (Exception ex)
         {
@@ -88,10 +108,41 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
         }
         finally
         {
+            await monitorCts.CancelAsync();
+            try { await cancellationMonitor; }
+            catch (OperationCanceledException) { }
             job.FinishedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None); // always persist final status
         }
 
         logger.LogInformation("Sync job {Id} ({Type}) finished with status {Status}", job.Id, job.JobType, job.Status);
+    }
+
+    private async Task MonitorCancellationAsync(int jobId, CancellationTokenSource jobCts, CancellationToken ct, Action onCancellationRequested)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AnimeDbContext>();
+
+            while (!ct.IsCancellationRequested)
+            {
+                var cancellationRequested = await db.SyncJobs
+                    .AsNoTracking()
+                    .Where(j => j.Id == jobId)
+                    .Select(j => j.CancellationRequested)
+                    .SingleOrDefaultAsync(ct);
+
+                if (cancellationRequested)
+                {
+                    onCancellationRequested();
+                    await jobCts.CancelAsync();
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 }
