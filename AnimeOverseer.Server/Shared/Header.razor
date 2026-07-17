@@ -1,20 +1,24 @@
 @using Microsoft.AspNetCore.Components.Routing
-@using Microsoft.JSInterop
 @inject NavigationManager NavManager
-@inject IJSRuntime JS
+@implements IDisposable
 <nav class="header-nav">
     <div class="nav-container">
         <a href="/" class="logo-link">
             <span class="logo-icon">&#x1F3AC;</span>
             <span class="logo-text">AnimeOverseer</span>
         </a>
+        <form class="header-search" @onsubmit="SubmitSearch" @onsubmit:preventDefault>
+            <span class="header-search-icon" aria-hidden="true">&#x1F50D;</span>
+            <input type="search" @bind="searchQuery" placeholder="Search anime..." aria-label="Search anime" />
+            @if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                <button type="button" class="header-search-clear" @onclick="ClearSearch" aria-label="Clear search">&#x2715;</button>
+            }
+        </form>
         <div class="nav-links">
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-link active">
                 <span class="nav-icon">&#x1F3E0;</span> Dashboard
             </NavLink>
-            <button class="nav-link" @onclick="NavigateToSearch">
-                <span class="nav-icon">&#x1F50D;</span> Search
-            </button>
             <NavLink href="/settings" class="nav-link">
                 <span class="nav-icon">&#x2699;&#xFE0F;</span> Settings
             </NavLink>
@@ -23,9 +27,43 @@
 </nav>
 
 @code {
-    private async Task NavigateToSearch()
+    private string searchQuery = string.Empty;
+
+    protected override void OnInitialized()
     {
+        SyncSearchQuery(NavManager.Uri);
+        NavManager.LocationChanged += OnLocationChanged;
+    }
+
+    public void Dispose() => NavManager.LocationChanged -= OnLocationChanged;
+
+    private void SubmitSearch()
+    {
+        var destination = string.IsNullOrWhiteSpace(searchQuery)
+            ? "/"
+            : "/?q=" + Uri.EscapeDataString(searchQuery.Trim());
+        NavManager.NavigateTo(destination);
+    }
+
+    private void ClearSearch()
+    {
+        searchQuery = string.Empty;
         NavManager.NavigateTo("/");
-        await JS.InvokeVoidAsync("eval", "document.getElementById('search-input')?.focus(); window.scrollTo(0, 0);");
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        SyncSearchQuery(e.Location);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncSearchQuery(string location)
+    {
+        var query = NavManager.ToAbsoluteUri(location).Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .FirstOrDefault(part => part.Length == 2 && part[0].Equals("q", StringComparison.OrdinalIgnoreCase));
+
+        searchQuery = query is null ? string.Empty : Uri.UnescapeDataString(query[1]);
     }
 }

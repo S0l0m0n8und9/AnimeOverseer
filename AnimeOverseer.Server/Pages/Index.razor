@@ -12,17 +12,17 @@
 
 <div class="dashboard">
     <div class="controls-bar">
-        <div class="preset-filters-row">
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetAllAnime">All Anime</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopAiring">Top Airing</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopUpcoming">Top Upcoming</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopTVSeries">Top TV Series</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopMovies">Top Movies</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopOVAs">Top OVAs</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopONAs">Top ONAs</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetTopSpecials">Top Specials</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetMostPopular">Most Popular</button>
-            <button class="btn btn-outline-secondary me-2" @onclick="SetPresetMostFavorited">Most Favorited</button>
+        <div class="preset-filters-row" aria-label="Quick filters">
+            <button class="preset-filter" @onclick="SetPresetAllAnime">All Anime</button>
+            <button class="preset-filter" @onclick="SetPresetTopAiring">Top Airing</button>
+            <button class="preset-filter" @onclick="SetPresetTopUpcoming">Top Upcoming</button>
+            <button class="preset-filter" @onclick="SetPresetTopTVSeries">Top TV Series</button>
+            <button class="preset-filter" @onclick="SetPresetTopMovies">Top Movies</button>
+            <button class="preset-filter" @onclick="SetPresetTopOVAs">Top OVAs</button>
+            <button class="preset-filter" @onclick="SetPresetTopONAs">Top ONAs</button>
+            <button class="preset-filter" @onclick="SetPresetTopSpecials">Top Specials</button>
+            <button class="preset-filter" @onclick="SetPresetMostPopular">Most Popular</button>
+            <button class="preset-filter" @onclick="SetPresetMostFavorited">Most Favorited</button>
         </div>
 
         <div class="filters-row">
@@ -38,18 +38,6 @@
                 <input type="checkbox" checked="@hideInLibrary" @onchange="ToggleHideInLibrary" />
                 Hide in library
             </label>
-        </div>
-
-        <div class="search-row">
-            <div class="search-wrapper">
-                <span class="search-icon">&#x1F50D;</span>
-                <input type="text" id="search-input" placeholder="Search anime by title..." @bind="searchQuery"
-                       @bind:event="oninput" @onkeydown="HandleKeyDown" class="form-input search-input" />
-                @if (!string.IsNullOrWhiteSpace(searchQuery))
-                {
-                    <button type="button" class="search-clear" @onclick="ClearSearch" aria-label="Clear search" title="Clear search">&#x2715;</button>
-                }
-            </div>
         </div>
 
         <FilterBuilder State="filterState" OnChanged="OnFilterChanged"
@@ -401,32 +389,6 @@
             await LoadRecent();
     }
 
-    private async Task SearchAnime()
-    {
-        allAnimes  = new();
-        totalCount = 0;
-        PushUrl(replace: false);
-        if (!string.IsNullOrWhiteSpace(searchQuery))
-            await LoadSearch();
-        else if (filterState.IsActive)
-            await LoadFiltered();
-        else
-            await LoadRecent();
-    }
-
-    private async Task ClearSearch()
-    {
-        searchQuery = string.Empty;
-        allAnimes = new();
-        totalCount = 0;
-        PushUrl(replace: true);
-
-        if (filterState.IsActive)
-            await LoadFiltered();
-        else
-            await LoadRecent();
-    }
-
     private async Task OnFilterChanged()
     {
         allAnimes  = new();
@@ -449,11 +411,6 @@
     {
         PushUrl(replace: true);
         StateHasChanged();
-    }
-
-    private async Task HandleKeyDown(KeyboardEventArgs args)
-    {
-        if (args.Key == "Enter") await SearchAnime();
     }
 
     // ── Preset Filter Handlers ──────────────────────────────────────
