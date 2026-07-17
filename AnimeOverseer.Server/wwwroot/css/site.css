@@ -258,6 +258,22 @@ img {
     padding-right: 42px;
 }
 
+.quick-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.quick-filter input {
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
 .search-clear {
     position: absolute;
     right: 10px;

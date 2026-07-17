@@ -34,6 +34,10 @@
                 <option value="96">96</option>
             </select>
             <span class="filter-label">at a time</span>
+            <label class="quick-filter" title="Hide anime already present in Sonarr or Radarr">
+                <input type="checkbox" checked="@hideInLibrary" @onchange="ToggleHideInLibrary" />
+                Hide in library
+            </label>
         </div>
 
         <div class="search-row">
@@ -60,7 +64,7 @@
         {
             <span>@DisplayedAnimes.Count result@(DisplayedAnimes.Count != 1 ? "s" : "") for "@searchQuery"</span>
         }
-        else if (filterState.IsActive)
+        else if (filterState.IsActive || hideInLibrary)
         {
             <span>@DisplayedAnimes.Count of @allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") shown (@totalCount total)</span>
         }
@@ -83,7 +87,7 @@
             <span class="empty-icon">&#x1F3AC;</span>
             <h3>No anime found</h3>
             <p>
-                @if (filterState.IsActive && allAnimes.Count > 0)
+                @if ((filterState.IsActive || hideInLibrary) && allAnimes.Count > 0)
                 {
                     <text>No anime match the active filters. Try adjusting or clearing them.</text>
                 }
@@ -137,11 +141,14 @@
     private bool isLoading = false;
     private bool isLoadingMore = false;
     private bool _ownNavigation = false;
+    private bool hideInLibrary;
 
     private List<Anime> DisplayedAnimes => SortEngine.Apply(
-        filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery) && !HasLibraryFilter
-            ? allAnimes
-            : FilterEngine.Apply(allAnimes, filterState, IsInLibrary),
+            (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery) && !HasLibraryFilter
+                ? allAnimes
+                : FilterEngine.Apply(allAnimes, filterState, IsInLibrary))
+            .Where(anime => !hideInLibrary || !IsInLibrary(anime))
+            .ToList(),
         sortState, IsInLibrary);
 
     private bool HasLibraryFilter => filterState.Groups
@@ -188,6 +195,7 @@
 
         pageSize    = qs.TryGetValue("pageSize", out var ps) && int.TryParse(ps, out var psi) ? psi : 24;
         searchQuery = qs.GetValueOrDefault("q", string.Empty);
+        hideInLibrary = qs.TryGetValue("hideInLibrary", out var hide) && hide == "1";
         filterState = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
@@ -219,6 +227,8 @@
             parts.Add($"pageSize={pageSize}");
         if (!string.IsNullOrEmpty(searchQuery))
             parts.Add($"q={Uri.EscapeDataString(searchQuery)}");
+        if (hideInLibrary)
+            parts.Add("hideInLibrary=1");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
         if (sortState.IsActive)
@@ -426,6 +436,13 @@
             await LoadFiltered();
         else
             await LoadRecent();
+    }
+
+    private void ToggleHideInLibrary(ChangeEventArgs e)
+    {
+        hideInLibrary = e.Value is bool value && value;
+        PushUrl(replace: true);
+        StateHasChanged();
     }
 
     private void OnSortChanged()
