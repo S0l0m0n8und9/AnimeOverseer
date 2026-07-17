@@ -500,7 +500,9 @@
                 {
                     Field = FilterField.Status,
                     Operator = FilterOperator.Equals,
-                    Value = "Not Yet Aired"
+                    // Jikan's canonical status value is "Not yet aired". The
+                    // database filter uses an exact comparison, including case.
+                    Value = "Not yet aired"
                 }]
             }]
         };
