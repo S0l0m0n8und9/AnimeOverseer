@@ -41,16 +41,31 @@
 
     private void SubmitSearch()
     {
-        var destination = string.IsNullOrWhiteSpace(searchQuery)
-            ? "/"
-            : "/?q=" + Uri.EscapeDataString(searchQuery.Trim());
-        NavManager.NavigateTo(destination);
+        NavigateWithSearch(searchQuery);
     }
 
     private void ClearSearch()
     {
         searchQuery = string.Empty;
-        NavManager.NavigateTo("/");
+        NavigateWithSearch(null);
+    }
+
+    private void NavigateWithSearch(string? query)
+    {
+        var currentUri = NavManager.ToAbsoluteUri(NavManager.Uri);
+        var parts = currentUri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Where(part => !Uri.UnescapeDataString(part.Split('=', 2)[0])
+                .Equals("q", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(query))
+            parts.Add("q=" + Uri.EscapeDataString(query.Trim()));
+
+        var destination = parts.Count == 0
+            ? currentUri.AbsolutePath
+            : currentUri.AbsolutePath + "?" + string.Join("&", parts);
+        NavManager.NavigateTo(destination);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)

@@ -418,11 +418,11 @@
     {
         filterState = new FilterState();
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadRecent();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadRecent();
     }
 
     private async Task SetPresetTopAiring()
@@ -440,11 +440,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopUpcoming()
@@ -464,11 +464,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopTVSeries()
@@ -486,11 +486,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopMovies()
@@ -508,11 +508,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopOVAs()
@@ -530,11 +530,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopONAs()
@@ -552,11 +552,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetTopSpecials()
@@ -574,11 +574,11 @@
             }]
         };
         sortState = new SortState();
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadFiltered();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadFiltered();
     }
 
     private async Task SetPresetMostPopular()
@@ -592,11 +592,11 @@
                 Direction = SortDirection.Descending
             }]
         };
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadRecent(); // LoadRecent respects sortState
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadRecent(); // LoadRecent respects sortState
     }
 
     private async Task SetPresetMostFavorited()
@@ -605,11 +605,11 @@
         // This requires a special query since we don't have built-in sorting by Requests count
         filterState = new FilterState();
         sortState = new SortState(); // Clear sort since we're using custom loading
-        searchQuery = string.Empty;
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
-        await LoadMostFavorited();
+        if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
+        else await LoadMostFavorited();
     }
 
     // ── Serialisation ────────────────────────────────────────
