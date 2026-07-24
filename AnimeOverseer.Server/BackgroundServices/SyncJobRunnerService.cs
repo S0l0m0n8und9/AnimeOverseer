@@ -104,6 +104,13 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
         {
             job.Status = "Failed";
             job.Message = ex.Message;
+            db.SyncJobLogs.Add(new SyncJobLog
+            {
+                SyncJobId = job.Id,
+                Timestamp = DateTime.UtcNow,
+                Level = "Error",
+                Message = $"Sync failed — {ex.Message}"
+            });
             logger.LogError(ex, "Sync job {Id} ({Type}) failed", job.Id, job.JobType);
         }
         finally

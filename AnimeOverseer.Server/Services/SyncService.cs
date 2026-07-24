@@ -198,6 +198,11 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
     private static void EnrichFields(Anime target, Anime source)
     {
+        if (!target.HasEnglishTitle && source.HasEnglishTitle)
+        {
+            target.Title = source.Title;
+            target.HasEnglishTitle = true;
+        }
         if (string.IsNullOrWhiteSpace(target.Synopsis) && !string.IsNullOrWhiteSpace(source.Synopsis))
             target.Synopsis = source.Synopsis;
         if (target.Episodes == null && source.Episodes != null)

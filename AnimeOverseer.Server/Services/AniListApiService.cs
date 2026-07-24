@@ -131,6 +131,7 @@ public class AniListApiService : IAnimeDataSource
             AniListId = element.TryGetProperty("id", out var id) && id.ValueKind != JsonValueKind.Null ? id.GetInt32() : null,
             MALId = element.TryGetProperty("idMal", out var malId) && malId.ValueKind != JsonValueKind.Null ? malId.GetInt32() : null,
             Title = englishTitle ?? romajiTitle ?? nativeTitle ?? "Unknown",
+            HasEnglishTitle = !string.IsNullOrWhiteSpace(englishTitle),
             OriginalTitle = romajiTitle ?? nativeTitle,
             Synopsis = description,
             ImageUrl = element.TryGetProperty("coverImage", out var ci) && ci.TryGetProperty("large", out var large) && large.ValueKind != JsonValueKind.Null ? large.GetString() : null,

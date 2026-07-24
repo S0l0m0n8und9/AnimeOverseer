@@ -5,11 +5,14 @@ namespace AnimeOverseer.Server.Services;
 
 public class JikanApiService : IAnimeDataSource
 {
+    private const int MaxRequestAttempts = 3;
     private readonly HttpClient _httpClient;
+    private readonly ILogger<JikanApiService> _logger;
 
-    public JikanApiService(HttpClient httpClient)
+    public JikanApiService(HttpClient httpClient, ILogger<JikanApiService> logger)
     {
         _httpClient = httpClient;
+        _logger = logger;
     }
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
@@ -34,8 +37,7 @@ public class JikanApiService : IAnimeDataSource
             while (true)
             {
                 var sep = baseUrl.Contains('?') ? "&" : "?";
-                var response = await _httpClient.GetAsync($"{baseUrl}{sep}page={page}", ct);
-                if (!response.IsSuccessStatusCode) break;
+                using var response = await GetWithRetryAsync($"{baseUrl}{sep}page={page}", ct);
 
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
@@ -61,12 +63,54 @@ public class JikanApiService : IAnimeDataSource
         {
             throw;
         }
-        catch
-        {
-            // Rate limiting or API errors — return whatever was collected so far
-        }
         return animes;
     }
+
+    private async Task<HttpResponseMessage> GetWithRetryAsync(string url, CancellationToken ct)
+    {
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= MaxRequestAttempts; attempt++)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(url, ct);
+                if (response.IsSuccessStatusCode)
+                    return response;
+
+                var statusCode = (int)response.StatusCode;
+                var reason = response.ReasonPhrase ?? "Unknown error";
+                var error = new HttpRequestException(
+                    $"Jikan returned HTTP {statusCode} ({reason}) for {url}.", null, response.StatusCode);
+
+                if (!IsTransientStatusCode(statusCode) || attempt == MaxRequestAttempts)
+                {
+                    response.Dispose();
+                    throw error;
+                }
+
+                var delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(attempt * 2);
+                response.Dispose();
+                lastError = error;
+                _logger.LogWarning(error, "Jikan request failed (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}",
+                    attempt, MaxRequestAttempts, delay);
+                await Task.Delay(delay, ct);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == null && attempt < MaxRequestAttempts)
+            {
+                lastError = ex;
+                var delay = TimeSpan.FromSeconds(attempt * 2);
+                _logger.LogWarning(ex, "Could not reach Jikan (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}",
+                    attempt, MaxRequestAttempts, delay);
+                await Task.Delay(delay, ct);
+            }
+        }
+
+        throw new HttpRequestException($"Jikan request failed after {MaxRequestAttempts} attempts: {url}", lastError);
+    }
+
+    private static bool IsTransientStatusCode(int statusCode) =>
+        statusCode == StatusCodes.Status429TooManyRequests || statusCode >= StatusCodes.Status500InternalServerError;
 
     public async Task<List<Anime>> SearchAsync(string query)
     {
@@ -226,6 +270,7 @@ public class JikanApiService : IAnimeDataSource
         {
             MALId = element.TryGetProperty("mal_id", out var malId) ? malId.GetInt32() : 0,
             Title = title,
+            HasEnglishTitle = !string.IsNullOrWhiteSpace(titleEnglish),
             OriginalTitle = element.TryGetProperty("title", out var jt) && jt.ValueKind != JsonValueKind.Null
                 ? jt.GetString() : null,
             Synopsis = element.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.",

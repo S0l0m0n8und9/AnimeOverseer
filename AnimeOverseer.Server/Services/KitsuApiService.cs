@@ -107,7 +107,9 @@ public class KitsuApiService : IAnimeDataSource
     private Anime MapFromKitsu(JsonElement element, int year, string season)
     {
         var attributes = element.GetProperty("attributes");
-        var title = attributes.TryGetProperty("canonicalTitle", out var ct) ? ct.GetString() : "Unknown";
+        var canonicalTitle = attributes.TryGetProperty("canonicalTitle", out var ct) ? ct.GetString() : null;
+        var englishTitle = GetEnglishTitle(attributes);
+        var title = englishTitle ?? canonicalTitle ?? "Unknown";
         var synopsis = attributes.TryGetProperty("synopsis", out var syn) ? syn.GetString() : "No synopsis available.";
         var coverImage = attributes.TryGetProperty("coverImage", out var ci) &&
                         ci.TryGetProperty("original", out var orig)
@@ -118,6 +120,8 @@ public class KitsuApiService : IAnimeDataSource
         {
             KitsuId = element.TryGetProperty("id", out var id) && int.TryParse(id.GetString(), out var parsedId) ? parsedId : 0,
             Title = title,
+            HasEnglishTitle = !string.IsNullOrWhiteSpace(englishTitle),
+            OriginalTitle = canonicalTitle,
             Synopsis = synopsis,
             ImageUrl = coverImage,
             Type = attributes.TryGetProperty("format", out var f) ? f.GetString()?.Replace("_", " ") : null,
@@ -137,6 +141,21 @@ public class KitsuApiService : IAnimeDataSource
                 : (DateTime?)null,
             SeasonId = 0
         };
+    }
+
+    private static string? GetEnglishTitle(JsonElement attributes)
+    {
+        if (!attributes.TryGetProperty("titles", out var titles) || titles.ValueKind != JsonValueKind.Object)
+            return null;
+
+        foreach (var locale in new[] { "en", "en_us", "en_jp" })
+        {
+            if (titles.TryGetProperty(locale, out var value) && value.ValueKind != JsonValueKind.Null &&
+                !string.IsNullOrWhiteSpace(value.GetString()))
+                return value.GetString();
+        }
+
+        return null;
     }
 
     public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take)

@@ -27,6 +27,11 @@ public class Anime
     [Required]
     public string Title { get; set; } = string.Empty;
 
+    // Indicates that Title came from a source's explicitly localized English field.
+    // This is only used while importing and is not persisted.
+    [NotMapped]
+    public bool HasEnglishTitle { get; set; }
+
     public string? OriginalTitle { get; set; }
 
     public string? Synopsis { get; set; }

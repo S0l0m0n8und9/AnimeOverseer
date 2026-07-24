@@ -264,6 +264,14 @@ public class AnimeCacheService : IAnimeDataSource
     // Copies fields from source into target only where target has no data.
     private static void EnrichAnimeFields(Anime target, Anime source)
     {
+        // Jikan falls back to its default (usually romaji) title when no English
+        // localization exists. Prefer an explicitly localized English title found
+        // in a secondary catalogue.
+        if (!target.HasEnglishTitle && source.HasEnglishTitle)
+        {
+            target.Title = source.Title;
+            target.HasEnglishTitle = true;
+        }
         if (string.IsNullOrWhiteSpace(target.Synopsis) && !string.IsNullOrWhiteSpace(source.Synopsis))
             target.Synopsis = source.Synopsis;
         if (target.Episodes == null && source.Episodes != null)
