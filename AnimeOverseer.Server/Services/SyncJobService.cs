@@ -66,6 +66,7 @@ public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
 
     public async Task<List<SyncJob>> GetRecentAsync(int skip = 0, int count = 30)
         => await db.SyncJobs
+            .AsNoTracking()
             .OrderByDescending(j => j.QueuedAt)
             .Skip(skip)
             .Take(count)
