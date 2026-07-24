@@ -6,10 +6,13 @@ public sealed record StorageUsage(long DatabaseBytes, long ImageCacheBytes, int 
 
 public class StorageUsageService(IConfiguration configuration, IWebHostEnvironment environment)
 {
+    public string GetImageCacheDirectory()
+        => Path.Combine(environment.WebRootPath, "images", "cache");
+
     public Task<StorageUsage> GetUsageAsync()
     {
         var databaseBytes = GetDatabaseSize();
-        var cacheDirectory = Path.Combine(environment.WebRootPath, "images", "cache");
+        var cacheDirectory = GetImageCacheDirectory();
         var imageFiles = Directory.Exists(cacheDirectory)
             ? Directory.EnumerateFiles(cacheDirectory, "*", SearchOption.AllDirectories)
             : Enumerable.Empty<string>();
@@ -38,17 +41,24 @@ public class StorageUsageService(IConfiguration configuration, IWebHostEnvironme
 
     private long GetDatabaseSize()
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=animeoverseer.db";
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        if (string.IsNullOrWhiteSpace(dataSource) || dataSource == ":memory:") return 0;
-
-        var databasePath = Path.IsPathFullyQualified(dataSource)
-            ? dataSource
-            : Path.Combine(environment.ContentRootPath, dataSource);
+        var databasePath = GetDatabasePath();
+        if (databasePath is null) return 0;
 
         // SQLite can store recent changes in these companion files while WAL mode is active.
         return new[] { databasePath, databasePath + "-wal", databasePath + "-shm" }
             .Where(File.Exists)
             .Sum(path => new FileInfo(path).Length);
     }
+
+    private string? GetDatabasePath()
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=animeoverseer.db";
+        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
+        if (string.IsNullOrWhiteSpace(dataSource) || dataSource == ":memory:") return null;
+
+        return Path.IsPathFullyQualified(dataSource)
+            ? dataSource
+            : Path.Combine(environment.ContentRootPath, dataSource);
+    }
+
 }
