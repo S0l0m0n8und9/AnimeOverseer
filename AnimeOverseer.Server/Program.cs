@@ -32,6 +32,7 @@ builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<AnimeCacheService>();
 builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCacheService>());
 builder.Services.AddSingleton<ImageCacheService>();
+builder.Services.AddScoped<StorageUsageService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<MediaRequestService>();
 builder.Services.AddSingleton<MediaLibraryService>();

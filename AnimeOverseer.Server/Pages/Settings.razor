@@ -5,6 +5,7 @@
 @using System.Text.Json
 @inject SettingsService SettingsService
 @inject SyncJobService SyncJobService
+@inject StorageUsageService StorageUsageService
 @inject IHttpClientFactory HttpClientFactory
 @implements IDisposable
 
@@ -29,6 +30,10 @@
         <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.History)"
                 aria-selected="@(_activeTab == SettingsTab.History)" @onclick="() => _activeTab = SettingsTab.History">
             Job history
+        </button>
+        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Storage)"
+                aria-selected="@(_activeTab == SettingsTab.Storage)" @onclick="() => _activeTab = SettingsTab.Storage">
+            Storage
         </button>
     </div>
 
@@ -200,6 +205,40 @@
     }
     }
 
+    @if (_activeTab == SettingsTab.Storage)
+    {
+    <!-- ══ Storage ═══════════════════════════════════════════════════════ -->
+    <div class="settings-section-heading">
+        <div>
+            <h2>Storage usage</h2>
+            <p>Space used by AnimeOverseer’s local data.</p>
+        </div>
+        <button class="btn btn-secondary" @onclick="LoadStorageUsageAsync" disabled="@_loadingStorage">
+            @(_loadingStorage ? "Refreshing…" : "Refresh")
+        </button>
+    </div>
+
+    @if (_storageUsage is null)
+    {
+        <p style="color:#888">Loading storage usage…</p>
+    }
+    else
+    {
+        <div class="settings-card-grid settings-card-grid--storage">
+            <div class="settings-card storage-card">
+                <span class="storage-card-label">Database</span>
+                <strong class="storage-card-value">@FormatBytes(_storageUsage.DatabaseBytes)</strong>
+                <span class="storage-card-detail">SQLite database, including active journal files</span>
+            </div>
+            <div class="settings-card storage-card">
+                <span class="storage-card-label">Stored pictures</span>
+                <strong class="storage-card-value">@FormatBytes(_storageUsage.ImageCacheBytes)</strong>
+                <span class="storage-card-detail">@_storageUsage.ImageCount cached cover @(_storageUsage.ImageCount == 1 ? "image" : "images")</span>
+            </div>
+        </div>
+    }
+    }
+
     @if (_activeTab == SettingsTab.Servers)
     {
     <!-- ══ Media Servers ════════════════════════════════════════════════ -->
@@ -315,7 +354,7 @@
 </div>
 
 @code {
-    private enum SettingsTab { Sources, Servers, History }
+    private enum SettingsTab { Sources, Servers, History, Storage }
 
     // ── State ─────────────────────────────────────────────────────────────
 
@@ -326,6 +365,8 @@
     private int _jobsPerPage = 10;
     private SettingsTab _activeTab = SettingsTab.Sources;
     private bool _triggering = false;
+    private bool _loadingStorage;
+    private StorageUsage? _storageUsage;
     private CancellationTokenSource _cts = new();
 
     private HashSet<int> _jikanYears = new() { DateTime.UtcNow.Year };
@@ -353,7 +394,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync());
+        await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync(), LoadStorageUsageAsync());
         StateHasChanged();
         StartPolling();
     }
@@ -430,6 +471,33 @@
         _plexToken   = await SettingsService.GetAsync("plex.token")    ?? "";
         _jellyfinUrl = await SettingsService.GetAsync("jellyfin.url")  ?? "";
         _jellyfinKey = await SettingsService.GetAsync("jellyfin.apikey") ?? "";
+    }
+
+    private async Task LoadStorageUsageAsync()
+    {
+        _loadingStorage = true;
+        try
+        {
+            _storageUsage = await StorageUsageService.GetUsageAsync();
+        }
+        finally
+        {
+            _loadingStorage = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var size = (double)bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return unit == 0 ? $"{size:N0} {units[unit]}" : $"{size:N1} {units[unit]}";
     }
 
     // ── Sync triggers ─────────────────────────────────────────────────────
