@@ -105,10 +105,22 @@
                     <summary style="padding:.65rem .8rem;cursor:pointer;color:#ddd;font-size:.9em">
                         Synced anime (@_syncedAnimes.Count.ToString("N0"))
                     </summary>
-                    <div style="border-top:1px solid #333;padding:.4rem .8rem;max-height:340px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.15rem 1rem">
+                    <div class="synced-anime-grid">
                         @foreach (var anime in _syncedAnimes)
                         {
-                            <a href="/anime/@anime.Id" style="color:#90caf9;text-decoration:none;font-size:.88em;padding:.25rem 0">@anime.Title</a>
+                            <a class="synced-anime-card" href="/anime/@anime.Id" title="@anime.Title">
+                                <div class="synced-anime-image-wrapper">
+                                    @if (!string.IsNullOrEmpty(anime.LocalImagePath) || !string.IsNullOrEmpty(anime.ImageUrl))
+                                    {
+                                        <img src="@(anime.LocalImagePath ?? anime.ImageUrl)" alt="@anime.Title cover" class="synced-anime-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+                                    }
+                                    else
+                                    {
+                                        <div class="synced-anime-placeholder">&#x1F3AC;</div>
+                                    }
+                                </div>
+                                <span class="synced-anime-title">@anime.Title</span>
+                            </a>
                         }
                     </div>
                 </details>
