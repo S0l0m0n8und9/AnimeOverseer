@@ -10,18 +10,40 @@
 
 <PageTitle>Settings - AnimeOverseer</PageTitle>
 
-<div class="settings-page" style="max-width:900px;margin:0 auto;padding:1.5rem">
+<div class="settings-page">
+    <div class="settings-header">
+        <span class="settings-eyebrow">Configuration</span>
+        <h1 class="settings-title">Settings</h1>
+        <p>Manage your catalogue syncs, media connections, and recent activity.</p>
+    </div>
 
+    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Sources)"
+                aria-selected="@(_activeTab == SettingsTab.Sources)" @onclick="() => _activeTab = SettingsTab.Sources">
+            Data sources
+        </button>
+        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Servers)"
+                aria-selected="@(_activeTab == SettingsTab.Servers)" @onclick="() => _activeTab = SettingsTab.Servers">
+            Media servers
+        </button>
+        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.History)"
+                aria-selected="@(_activeTab == SettingsTab.History)" @onclick="() => _activeTab = SettingsTab.History">
+            Job history
+        </button>
+    </div>
+
+    @if (_activeTab == SettingsTab.Sources)
+    {
     <!-- ══ Data Sources ══════════════════════════════════════════════════ -->
-    <h2 style="margin-top:0">Data Sources</h2>
+    <h2>Data Sources</h2>
 
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
+    <div class="settings-card-grid settings-card-grid--sources">
         @foreach (var src in new[] { ("AniList", "AniList catalogue (primary)") })
         {
             var (type, label) = src;
             var active = IsActive(type);
             var last = LastJob(type);
-            <div style="border:1px solid #333;border-radius:8px;padding:1rem;min-width:220px;flex:1">
+            <div class="settings-card" style="min-width:220px;flex:1">
                 <div style="font-weight:600;margin-bottom:.5rem">@label</div>
                 @if (active != null)
                 {
@@ -106,7 +128,10 @@
             </div>
         }
     </div>
+    }
 
+    @if (_activeTab == SettingsTab.History)
+    {
     <!-- ══ Job History ═══════════════════════════════════════════════════ -->
     <h2>Job History</h2>
 
@@ -128,7 +153,8 @@
                 </select>
             </label>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:.9em;margin-bottom:.75rem">
+        <div class="settings-table-wrapper">
+        <table class="settings-table">
             <thead>
                 <tr style="border-bottom:1px solid #333;text-align:left">
                     <th style="padding:.4rem .6rem">Type</th>
@@ -162,6 +188,7 @@
                 }
             </tbody>
         </table>
+        </div>
         @if (PageCount > 1)
         {
             <div style="display:flex;justify-content:center;align-items:center;gap:.5rem;margin-bottom:2rem">
@@ -171,14 +198,17 @@
             </div>
         }
     }
+    }
 
+    @if (_activeTab == SettingsTab.Servers)
+    {
     <!-- ══ Media Servers ════════════════════════════════════════════════ -->
     <h2>Media Servers</h2>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:1.5rem;margin-bottom:2rem">
+    <div class="settings-card-grid settings-card-grid--servers">
 
         @* Sonarr *@
-        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+        <div class="settings-card">
             <h3 style="margin-top:0;font-size:1.1rem">Sonarr</h3>
             <!-- The text and password here are to prevent FF from auto filling my login credentials because it ignores autocomplete="off"-->
             <input type="text" style="display:none">
@@ -206,7 +236,7 @@
         </div>
 
         @* Radarr *@
-        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+        <div class="settings-card">
             <h3 style="margin-top:0;font-size:1.1rem">Radarr</h3>
             <div style="margin-bottom:.75rem">
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">URL</label>
@@ -231,7 +261,7 @@
         </div>
 
         @* Plex *@
-        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+        <div class="settings-card">
             <h3 style="margin-top:0;font-size:1.1rem">Plex</h3>
             <div style="margin-bottom:.75rem">
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
@@ -256,7 +286,7 @@
         </div>
 
         @* Jellyfin *@
-        <div style="border:1px solid #333;border-radius:8px;padding:1.25rem">
+        <div class="settings-card">
             <h3 style="margin-top:0;font-size:1.1rem">Jellyfin</h3>
             <div style="margin-bottom:.75rem">
                 <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Server URL</label>
@@ -281,9 +311,12 @@
         </div>
 
     </div>
+    }
 </div>
 
 @code {
+    private enum SettingsTab { Sources, Servers, History }
+
     // ── State ─────────────────────────────────────────────────────────────
 
     private List<SyncJob> _jobs = new();
@@ -291,6 +324,7 @@
     private int _totalJobs;
     private int _jobsPage = 1;
     private int _jobsPerPage = 10;
+    private SettingsTab _activeTab = SettingsTab.Sources;
     private bool _triggering = false;
     private CancellationTokenSource _cts = new();
 
@@ -311,6 +345,8 @@
     private bool _showRadarrKey = false;
     private bool _showPlexToken = false;
     private bool _showJellyfinKey = false;
+
+    private string TabClass(SettingsTab tab) => _activeTab == tab ? "active" : "";
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
 

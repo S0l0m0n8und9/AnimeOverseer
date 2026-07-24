@@ -235,6 +235,152 @@ img {
     background-color: var(--bg-primary);
 }
 
+/* --- Settings --- */
+.settings-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    animation: fadeInUp 0.35s ease;
+}
+
+.settings-header {
+    margin-bottom: 1.5rem;
+}
+
+.settings-eyebrow {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--accent-light);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.settings-title {
+    margin: 0;
+    font-size: 2rem;
+    letter-spacing: -0.025em;
+}
+
+.settings-header p {
+    margin: 0.35rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.settings-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1.5rem;
+    padding: 0.35rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+}
+
+.settings-tab {
+    appearance: none;
+    flex: 0 0 auto;
+    padding: 0.55rem 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: transparent;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.settings-tab:hover {
+    color: var(--accent-light);
+    background: rgba(139, 92, 246, 0.12);
+}
+
+.settings-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.settings-page h2 {
+    margin: 0 0 1rem;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+}
+
+.settings-card-grid {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.settings-card-grid--sources {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.settings-card-grid--servers {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.settings-card {
+    padding: 1.25rem !important;
+    background: linear-gradient(145deg, var(--bg-card), #172236);
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.settings-card:hover {
+    border-color: rgba(139, 92, 246, 0.6) !important;
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.settings-card h3 {
+    color: var(--text-primary);
+}
+
+.settings-table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.settings-table {
+    width: 100%;
+    min-width: 680px;
+    border-collapse: collapse;
+    font-size: 0.9em;
+}
+
+.settings-table thead tr {
+    background: rgba(139, 92, 246, 0.08);
+}
+
+.settings-table th {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.settings-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.settings-table tbody tr:hover {
+    background: rgba(139, 92, 246, 0.06);
+}
+
 .content-wrapper {
     max-width: 1400px;
     margin: 0 auto;
