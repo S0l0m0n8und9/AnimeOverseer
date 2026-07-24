@@ -58,6 +58,9 @@ public class MyAnimeListApiService(HttpClient httpClient, IConfiguration configu
         OriginalTitle = x.TryGetProperty("alternative_titles", out var titles) && titles.TryGetProperty("ja", out var ja) ? ja.GetString() : null,
         AlternativeTitles = GetAlternativeTitles(x),
         Synopsis = Get(x, "synopsis"), ImageUrl = x.TryGetProperty("main_picture", out var pic) ? Get(pic, "large") ?? Get(pic, "medium") : null,
+        SourceImages = x.TryGetProperty("main_picture", out var picture) && (Get(picture, "large") ?? Get(picture, "medium")) is { Length: > 0 } poster
+            ? [new SourceImage { Source = "MyAnimeList", Type = "Poster", Url = poster }]
+            : [],
         Type = Get(x, "media_type")?.ToUpperInvariant() switch { "TV" => "TV", var type => type?.Replace('_', ' ') },
         Status = Get(x, "status")?.Replace('_', ' '), Episodes = Int(x, "num_episodes"),
         Rating = x.TryGetProperty("mean", out var mean) && mean.ValueKind != JsonValueKind.Null ? mean.GetDecimal() : null,

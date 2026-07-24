@@ -10,7 +10,7 @@ namespace AnimeOverseer.Server.Services;
 public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, ImageCacheService imageCache) : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
-    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
+    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.Images).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
@@ -167,6 +167,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         {
             var target = existing[Key(source)];
             if (!string.IsNullOrWhiteSpace(source.ImageUrl)) target.LocalImagePath = await imageCache.CacheImageAsync(source.ImageUrl, target.Id);
+            await StoreImagesAsync(target, source, ct);
             await ReplaceTagsAsync(target, source, ct);
             // The same title may occur in more than one provider season. Keep
             // the next replacement independent of the joins tracked for this one.
@@ -264,6 +265,24 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
     }
 
     private static void Copy(Anime t, Anime s) { t.Title=s.Title; t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl; t.MALId=s.MALId; t.AniListId=s.AniListId; t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate; }
+    private async Task StoreImagesAsync(Anime target, Anime source, CancellationToken ct)
+    {
+        var candidates = source.SourceImages.Count > 0
+            ? source.SourceImages
+            : string.IsNullOrWhiteSpace(source.ImageUrl) ? [] : [new SourceImage { Source = "Unknown", Type = "Poster", Url = source.ImageUrl }];
+        foreach (var candidate in candidates.Where(image => !string.IsNullOrWhiteSpace(image.Url)).GroupBy(image => (image.Source, image.Type, image.Url)).Select(group => group.First()))
+        {
+            var image = await db.AnimeImages.FirstOrDefaultAsync(existing =>
+                existing.AnimeId == target.Id && existing.Source == candidate.Source && existing.Type == candidate.Type && existing.ImageUrl == candidate.Url, ct);
+            if (image is null)
+            {
+                image = new AnimeImage { AnimeId = target.Id, Source = candidate.Source, Type = candidate.Type, ImageUrl = candidate.Url };
+                db.AnimeImages.Add(image);
+                await db.SaveChangesAsync(ct);
+            }
+            image.LocalImagePath ??= await imageCache.CacheArtworkAsync(candidate.Url, target.Id, candidate.Source, candidate.Type);
+        }
+    }
     private async Task ReplaceTagsAsync(Anime target, Anime source, CancellationToken ct)
     {
         db.AnimeGenres.RemoveRange(await db.AnimeGenres.Where(x => x.AnimeId == target.Id).ToListAsync(ct));

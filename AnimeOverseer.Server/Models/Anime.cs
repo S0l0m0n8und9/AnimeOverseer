@@ -78,8 +78,31 @@ public class Anime
 
     public List<Request> Requests { get; set; } = new();
 
+    public List<AnimeImage> Images { get; set; } = new();
+
     [NotMapped]
     public List<AnimeRelation> Relations { get; set; } = new();
+
+    [NotMapped]
+    public List<SourceImage> SourceImages { get; set; } = new();
+}
+
+public class AnimeImage
+{
+    public int Id { get; set; }
+    public int AnimeId { get; set; }
+    public Anime Anime { get; set; } = null!;
+    public string Source { get; set; } = string.Empty;
+    public string Type { get; set; } = "Poster"; // Poster, Banner, Background
+    public string ImageUrl { get; set; } = string.Empty;
+    public string? LocalImagePath { get; set; }
+}
+
+public class SourceImage
+{
+    public string Source { get; set; } = string.Empty;
+    public string Type { get; set; } = "Poster";
+    public string Url { get; set; } = string.Empty;
 }
 
 public class Genre

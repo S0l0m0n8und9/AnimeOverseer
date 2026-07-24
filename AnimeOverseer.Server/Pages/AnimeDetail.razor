@@ -201,6 +201,21 @@
                 </div>
             </div>
 
+            @if (anime.Images.Count > 1)
+            {
+                <div style="margin-top:1rem;border-top:1px solid #29334a;padding-top:.8rem">
+                    <div style="font-size:.8rem;color:#aab5cf;margin-bottom:.5rem">Artwork from connected catalogue sources</div>
+                    <div style="display:flex;gap:.55rem;overflow-x:auto;padding-bottom:.25rem">
+                        @foreach (var image in anime.Images.OrderBy(i => i.Type).ThenBy(i => i.Source))
+                        {
+                            <a href="@image.ImageUrl" target="_blank" rel="noopener" title="@image.Source @image.Type" style="flex:0 0 auto">
+                                <img src="@(image.LocalImagePath ?? image.ImageUrl)" alt="@anime.Title @image.Type" style="width:@(image.Type == "Banner" ? "180px" : "64px");height:72px;object-fit:cover;border-radius:5px;border:1px solid #3b4660" />
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (!string.IsNullOrEmpty(anime.Synopsis))
             {
                 <div class="synopsis-section">

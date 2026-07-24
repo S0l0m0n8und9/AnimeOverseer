@@ -56,6 +56,7 @@ public class AnimeScheduleApiService(HttpClient httpClient, SettingsService sett
             AlternativeTitles = value.TryGetProperty("names", out var alternativeNames) ? Names(alternativeNames) : [],
             Synopsis = Get(value, "description"),
             ImageUrl = string.IsNullOrWhiteSpace(image) ? null : ImageBaseUrl + image.TrimStart('/'),
+            SourceImages = string.IsNullOrWhiteSpace(image) ? [] : [new SourceImage { Source = "AnimeSchedule", Type = "Poster", Url = ImageBaseUrl + image.TrimStart('/') }],
             Type = value.TryGetProperty("mediaTypes", out var mediaTypes) && mediaTypes.ValueKind == JsonValueKind.Array
                 ? mediaTypes.EnumerateArray().Select(x => Get(x, "name")).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))
                 : null,

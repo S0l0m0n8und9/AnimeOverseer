@@ -10,7 +10,7 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
     private const string ApiUrl = "https://graphql.anilist.co";
     private const string MediaFields = @"
         id idMal title { romaji english native }
-        coverImage { large } description(asHtml: false) format episodes duration status
+        coverImage { large } bannerImage description(asHtml: false) format episodes duration status
         averageScore startDate { year month day } endDate { year month day }
         genres tags { name category isMediaSpoiler }
         relations { edges { relationType node { id idMal title { romaji english native } } } }";
@@ -110,6 +110,7 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             AlternativeTitles = new[] { english, romaji, native }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList(),
             Synopsis = GetString(element, "description")?.Replace("<br>", "\n").Replace("<i>", "").Replace("</i>", "").Replace("<b>", "").Replace("</b>", "").Trim(),
             ImageUrl = element.TryGetProperty("coverImage", out var image) ? GetString(image, "large") : null,
+            SourceImages = Artwork(element, image),
             Type = GetString(element, "format")?.Replace('_', ' '), Episodes = GetInt(element, "episodes"), Duration = GetInt(element, "duration"),
             Rating = GetInt(element, "averageScore") is int score ? score / 10m : null,
             Status = NormalizeStatus(GetString(element, "status")), StartDate = ParseDate(element, "startDate"), EndDate = ParseDate(element, "endDate")
@@ -126,6 +127,13 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
     }
 
     private static string? GetString(JsonElement el, string name) => el.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null ? value.GetString() : null;
+    private static List<SourceImage> Artwork(JsonElement element, JsonElement cover)
+    {
+        var images = new List<SourceImage>();
+        if (GetString(cover, "large") is { Length: > 0 } poster) images.Add(new() { Source = "AniList", Type = "Poster", Url = poster });
+        if (GetString(element, "bannerImage") is { Length: > 0 } banner) images.Add(new() { Source = "AniList", Type = "Banner", Url = banner });
+        return images;
+    }
     private static int? GetInt(JsonElement el, string name) => el.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null ? value.GetInt32() : null;
     private static DateTime? ParseDate(JsonElement el, string name) { if (!el.TryGetProperty(name, out var d) || GetInt(d, "year") is not int y || GetInt(d, "month") is not int m || GetInt(d, "day") is not int day) return null; try { return new DateTime(y, m, day); } catch { return null; } }
     private static string? NormalizeStatus(string? status) => status switch { "RELEASING" => "Currently Airing", "FINISHED" => "Finished", "NOT_YET_RELEASED" => "Not Yet Aired", "CANCELLED" => "Cancelled", "HIATUS" => "Hiatus", _ => status?.Replace('_', ' ') };

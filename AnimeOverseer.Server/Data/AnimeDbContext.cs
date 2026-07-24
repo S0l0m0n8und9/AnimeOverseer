@@ -11,6 +11,7 @@ public class AnimeDbContext : DbContext
     }
 
     public DbSet<Anime> Animes { get; set; }
+    public DbSet<AnimeImage> AnimeImages { get; set; }
     public DbSet<Genre> Genres { get; set; }
     public DbSet<AnimeGenre> AnimeGenres { get; set; }
     public DbSet<Theme> Themes { get; set; }
@@ -66,6 +67,10 @@ public class AnimeDbContext : DbContext
             .HasOne(ad => ad.Demographic)
             .WithMany(d => d.AnimeDemographics)
             .HasForeignKey(ad => ad.DemographicId);
+
+        modelBuilder.Entity<AnimeImage>()
+            .HasIndex(image => new { image.AnimeId, image.Source, image.Type, image.ImageUrl })
+            .IsUnique();
 
         modelBuilder.Entity<Genre>().HasIndex(g => g.Name).IsUnique();
         modelBuilder.Entity<Theme>().HasIndex(t => t.Name).IsUnique();

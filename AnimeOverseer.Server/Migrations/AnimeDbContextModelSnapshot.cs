@@ -82,6 +82,38 @@ namespace AnimeOverseer.Server.Migrations
                     b.ToTable("Animes");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AnimeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LocalImagePath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnimeId", "Source", "Type", "ImageUrl")
+                        .IsUnique();
+
+                    b.ToTable("AnimeImages");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeDemographic", b =>
                 {
                     b.Property<int>("AnimeId")
@@ -363,6 +395,17 @@ namespace AnimeOverseer.Server.Migrations
                     b.Navigation("Season");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeImage", b =>
+                {
+                    b.HasOne("AnimeOverseer.Server.Models.Anime", "Anime")
+                        .WithMany("Images")
+                        .HasForeignKey("AnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Anime");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeDemographic", b =>
                 {
                     b.HasOne("AnimeOverseer.Server.Models.Anime", "Anime")
@@ -432,6 +475,8 @@ namespace AnimeOverseer.Server.Migrations
                     b.Navigation("AnimeDemographics");
 
                     b.Navigation("AnimeGenres");
+
+                    b.Navigation("Images");
 
                     b.Navigation("AnimeThemes");
 
