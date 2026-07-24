@@ -21,22 +21,22 @@
     </div>
 
     <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Sources)"
-                aria-selected="@(_activeTab == SettingsTab.Sources)" @onclick="() => _activeTab = SettingsTab.Sources">
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Sources)" href="@TabUrl(SettingsTab.Sources)"
+           aria-selected="@(_activeTab == SettingsTab.Sources)">
             Data sources
-        </button>
-        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Servers)"
-                aria-selected="@(_activeTab == SettingsTab.Servers)" @onclick="() => _activeTab = SettingsTab.Servers">
+        </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Servers)" href="@TabUrl(SettingsTab.Servers)"
+           aria-selected="@(_activeTab == SettingsTab.Servers)">
             Media servers
-        </button>
-        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.History)"
-                aria-selected="@(_activeTab == SettingsTab.History)" @onclick="() => _activeTab = SettingsTab.History">
+        </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.History)" href="@TabUrl(SettingsTab.History)"
+           aria-selected="@(_activeTab == SettingsTab.History)">
             Job history
-        </button>
-        <button type="button" role="tab" class="settings-tab @TabClass(SettingsTab.Storage)"
-                aria-selected="@(_activeTab == SettingsTab.Storage)" @onclick="() => _activeTab = SettingsTab.Storage">
+        </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Storage)" href="@TabUrl(SettingsTab.Storage)"
+           aria-selected="@(_activeTab == SettingsTab.Storage)">
             Storage
-        </button>
+        </a>
     </div>
 
     @if (_activeTab == SettingsTab.Sources)
@@ -362,6 +362,9 @@
 @code {
     private enum SettingsTab { Sources, Servers, History, Storage }
 
+    [Parameter, SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
     // ── State ─────────────────────────────────────────────────────────────
 
     private List<SyncJob> _jobs = new();
@@ -395,7 +398,27 @@
 
     private string TabClass(SettingsTab tab) => _activeTab == tab ? "active" : "";
 
+    private static string TabUrl(SettingsTab tab) => tab switch
+    {
+        SettingsTab.Sources => "/settings",
+        SettingsTab.Servers => "/settings?tab=servers",
+        SettingsTab.History => "/settings?tab=history",
+        SettingsTab.Storage => "/settings?tab=storage",
+        _ => "/settings"
+    };
+
     // ── Lifecycle ──────────────────────────────────────────────────────────
+
+    protected override void OnParametersSet()
+    {
+        _activeTab = Tab?.ToLowerInvariant() switch
+        {
+            "servers" => SettingsTab.Servers,
+            "history" => SettingsTab.History,
+            "storage" => SettingsTab.Storage,
+            _ => SettingsTab.Sources
+        };
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
