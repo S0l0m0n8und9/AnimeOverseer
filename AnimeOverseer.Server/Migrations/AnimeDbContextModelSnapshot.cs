@@ -185,6 +185,9 @@ namespace AnimeOverseer.Server.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique();
+
                     b.ToTable("Demographics");
                 });
 
@@ -199,6 +202,9 @@ namespace AnimeOverseer.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.ToTable("Genres");
                 });
@@ -339,6 +345,9 @@ namespace AnimeOverseer.Server.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.ToTable("Themes");
                 });

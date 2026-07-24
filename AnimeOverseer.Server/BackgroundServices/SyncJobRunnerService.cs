@@ -87,6 +87,8 @@ public class SyncJobRunnerService(
             {
                 "Jikan"   => sync.RunJikanSyncAsync(job, jobCts.Token), // legacy queued jobs
                 "AniList" => sync.RunJikanSyncAsync(job, jobCts.Token),
+                "MyAnimeList" => sync.RunMyAnimeListSyncAsync(job, jobCts.Token),
+                "AnimeSchedule" => sync.RunAnimeScheduleSyncAsync(job, jobCts.Token),
                 "Kitsu"   => sync.RunKitsuSyncAsync(job, jobCts.Token),
                 _         => Task.CompletedTask
             });

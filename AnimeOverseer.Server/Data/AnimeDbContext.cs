@@ -66,5 +66,9 @@ public class AnimeDbContext : DbContext
             .HasOne(ad => ad.Demographic)
             .WithMany(d => d.AnimeDemographics)
             .HasForeignKey(ad => ad.DemographicId);
+
+        modelBuilder.Entity<Genre>().HasIndex(g => g.Name).IsUnique();
+        modelBuilder.Entity<Theme>().HasIndex(t => t.Name).IsUnique();
+        modelBuilder.Entity<Demographic>().HasIndex(d => d.Name).IsUnique();
     }
 }

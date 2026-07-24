@@ -107,6 +107,7 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             Title = english ?? romaji ?? native ?? "Unknown",
             HasEnglishTitle = !string.IsNullOrWhiteSpace(english),
             OriginalTitle = romaji ?? native,
+            AlternativeTitles = new[] { english, romaji, native }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList(),
             Synopsis = GetString(element, "description")?.Replace("<br>", "\n").Replace("<i>", "").Replace("</i>", "").Replace("<b>", "").Replace("</b>", "").Trim(),
             ImageUrl = element.TryGetProperty("coverImage", out var image) ? GetString(image, "large") : null,
             Type = GetString(element, "format")?.Replace('_', ' '), Episodes = GetInt(element, "episodes"), Duration = GetInt(element, "duration"),

@@ -32,7 +32,7 @@ public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
 
         // Catalogue imports are idempotent when re-run with the same season parameters.
         // Legacy enrichment jobs query the local DB ordered by Id, so they can skip records.
-        var parameters = failed.JobType is "Jikan" or "AniList"
+        var parameters = failed.JobType is "Jikan" or "AniList" or "MyAnimeList" or "AnimeSchedule"
             ? failed.Parameters
             : JsonSerializer.Serialize(new { skipCount = failed.ProcessedCount });
 

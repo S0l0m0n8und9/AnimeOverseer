@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.Services;
 
-public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, KitsuApiService kitsu)
+public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, MyAnimeListApiService myAnimeList, AnimeScheduleApiService animeSchedule, KitsuApiService kitsu)
 {
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
@@ -214,6 +214,54 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             Level = level,
             Message = message
         });
+    }
+
+    public Task RunMyAnimeListSyncAsync(SyncJob job, CancellationToken ct)
+        => RunSelectedCatalogueSyncAsync(job, "MyAnimeList", myAnimeList.GetSeasonAsync, ct);
+
+    public Task RunAnimeScheduleSyncAsync(SyncJob job, CancellationToken ct)
+        => RunSelectedCatalogueSyncAsync(job, "AnimeSchedule", animeSchedule.GetSeasonAsync, ct);
+
+    private async Task RunSelectedCatalogueSyncAsync(
+        SyncJob job,
+        string sourceName,
+        Func<int, string, CancellationToken, Task<List<Anime>>> fetch,
+        CancellationToken ct)
+    {
+        var (years, seasons) = ParseJikanParams(job.Parameters);
+        var syncedIds = GetSyncedIds(job);
+        job.TotalCount = 0;
+        Log(job, $"{sourceName} catalogue sync started — {seasons.Length} season(s) × {years.Length} year(s)");
+        await db.SaveChangesAsync(ct);
+
+        foreach (var year in years)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var cacheScope = scopeFactory.CreateScope();
+            var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+            var ids = await cache.FetchAndCacheSeasonsFromAsync(
+                year,
+                seasons,
+                fetch,
+                async count =>
+                {
+                    job.ProcessedCount += count;
+                    db.SyncJobs.Update(job);
+                    db.Entry(job).Property(j => j.CancellationRequested).IsModified = false;
+                    await db.SaveChangesAsync(CancellationToken.None);
+                },
+                ct);
+            syncedIds.UnionWith(ids);
+            job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
+            db.ChangeTracker.Clear();
+            db.SyncJobs.Update(job);
+            db.Entry(job).Property(j => j.CancellationRequested).IsModified = false;
+            Log(job, $"Completed {year} — {job.ProcessedCount:N0} anime fetched so far", "Success");
+            await db.SaveChangesAsync(ct);
+        }
+
+        Log(job, $"{sourceName} sync complete — {job.ProcessedCount:N0} anime processed", "Success");
+        await db.SaveChangesAsync(ct);
     }
 
     private static HashSet<int> GetSyncedIds(SyncJob job)

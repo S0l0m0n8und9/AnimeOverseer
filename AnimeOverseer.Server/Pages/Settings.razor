@@ -9,6 +9,8 @@
 @inject SyncJobTrigger SyncJobTrigger
 @inject StorageUsageService StorageUsageService
 @inject IHttpClientFactory HttpClientFactory
+@inject MyAnimeListApiService MyAnimeListApiService
+@inject AnimeScheduleApiService AnimeScheduleApiService
 @implements IDisposable
 
 <PageTitle>Settings - AnimeOverseer</PageTitle>
@@ -45,7 +47,12 @@
     <h2>Data Sources</h2>
 
     <div class="settings-card-grid settings-card-grid--sources">
-        @foreach (var src in new[] { ("AniList", "AniList catalogue (primary)") })
+        @foreach (var src in new[]
+        {
+            ("AniList", "AniList catalogue"),
+            ("MyAnimeList", "MyAnimeList catalogue"),
+            ("AnimeSchedule", "AnimeSchedule catalogue")
+        })
         {
             var (type, label) = src;
             var active = IsActive(type);
@@ -86,7 +93,7 @@
                     <div style="font-size:.8em;color:#888;margin-bottom:.5rem">Never run</div>
                 }
 
-                @if (type == "AniList")
+                @if (type is "AniList" or "MyAnimeList" or "AnimeSchedule")
                 {
                     <div style="margin-bottom:.5rem">
                         <div style="font-size:.78em;color:#aaa;margin-bottom:.3rem">Years</div>
@@ -129,11 +136,43 @@
 
                 <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem"
                         @onclick="() => TriggerSync(type)"
-                        disabled="@(active != null || _triggering || (type == "AniList" && (_jikanYears.Count == 0 || _jikanSeasons.Count == 0)))">
+                        disabled="@(active != null || _triggering || !CanSync(type) || (_jikanYears.Count == 0 || _jikanSeasons.Count == 0))">
                     Sync Now
                 </button>
+                @if (!CanSync(type))
+                {
+                    <span style="font-size:.78em;color:#888">Configure and validate this source first.</span>
+                }
             </div>
         }
+
+        @* MyAnimeList catalogue connection *@
+        <div class="settings-card" style="min-width:220px;flex:1">
+            <h3 style="margin-top:0;font-size:1.1rem">MyAnimeList</h3>
+            <p style="font-size:.82em;color:#aaa;margin-top:0">Catalogue access only. A MyAnimeList client ID is all that is needed.</p>
+            <div style="margin-bottom:.55rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Client ID</label>
+                <input class="form-input" style="width:100%" @bind="_malClientId" autocomplete="off" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SaveMyAnimeList" style="font-size:.85em" disabled="@_malSaving">@(_malSaving ? "Validating…" : "Save & Validate")</button>
+                @TestResultBadge(_malResult)
+            </div>
+        </div>
+
+        @* AnimeSchedule catalogue connection *@
+        <div class="settings-card" style="min-width:220px;flex:1">
+            <h3 style="margin-top:0;font-size:1.1rem">AnimeSchedule</h3>
+            <p style="font-size:.82em;color:#aaa;margin-top:0">Catalogue access only. Use the application API token from AnimeSchedule.</p>
+            <div style="margin-bottom:.75rem">
+                <label style="display:block;font-size:.85em;color:#aaa;margin-bottom:.25rem">Application API token</label>
+                <input class="form-input" style="width:100%" @bind="_animeScheduleApplicationToken" type="password" autocomplete="new-password" />
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" @onclick="SaveAnimeSchedule" style="font-size:.85em" disabled="@_animeScheduleSaving">@(_animeScheduleSaving ? "Validating…" : "Save & Validate")</button>
+                @TestResultBadge(_animeScheduleResult)
+            </div>
+        </div>
     </div>
     }
 
@@ -386,6 +425,10 @@
     private string _radarrUrl = "", _radarrKey = "";
     private string _plexUrl = "", _plexToken = "";
     private string _jellyfinUrl = "", _jellyfinKey = "";
+    private string _malClientId = "";
+    private string _animeScheduleApplicationToken = "";
+    private bool _malSaving, _animeScheduleSaving;
+    private (bool Ok, string Msg)? _malResult, _animeScheduleResult;
 
     private bool _sonarrTesting, _radarrTesting, _plexTesting, _jellyfinTesting;
     private (bool Ok, string Msg)? _sonarrResult, _radarrResult, _plexResult, _jellyfinResult;
@@ -502,6 +545,8 @@
         _plexToken   = await SettingsService.GetAsync("plex.token")    ?? "";
         _jellyfinUrl = await SettingsService.GetAsync("jellyfin.url")  ?? "";
         _jellyfinKey = await SettingsService.GetAsync("jellyfin.apikey") ?? "";
+        _malClientId = await SettingsService.GetAsync("myanimelist.clientId") ?? "";
+        _animeScheduleApplicationToken = await SettingsService.GetAsync("animeschedule.applicationToken") ?? "";
     }
 
     private async Task LoadStorageUsageAsync()
@@ -539,7 +584,7 @@
         try
         {
             string? parameters = null;
-            if (jobType == "AniList")
+            if (jobType is "AniList" or "MyAnimeList" or "AnimeSchedule")
                 parameters = JsonSerializer.Serialize(new
                 {
                     years = _jikanYears.OrderBy(y => y),
@@ -622,6 +667,34 @@
         await SettingsService.SetAsync("jellyfin.url", _jellyfinUrl.Trim());
         await SettingsService.SetAsync("jellyfin.apikey", _jellyfinKey.Trim());
         _jellyfinResult = (true, "Saved");
+    }
+
+    private async Task SaveMyAnimeList()
+    {
+        _malSaving = true;
+        _malResult = null;
+        await SettingsService.SetAsync("myanimelist.clientId", _malClientId.Trim());
+        try
+        {
+            await MyAnimeListApiService.TestConnectionAsync();
+            _malResult = (true, "Credentials valid");
+        }
+        catch (Exception ex) { _malResult = (false, FormatException(ex)); }
+        finally { _malSaving = false; }
+    }
+
+    private async Task SaveAnimeSchedule()
+    {
+        _animeScheduleSaving = true;
+        _animeScheduleResult = null;
+        await SettingsService.SetAsync("animeschedule.applicationToken", _animeScheduleApplicationToken.Trim());
+        try
+        {
+            await AnimeScheduleApiService.TestConnectionAsync();
+            _animeScheduleResult = (true, "Credentials valid");
+        }
+        catch (Exception ex) { _animeScheduleResult = (false, FormatException(ex)); }
+        finally { _animeScheduleSaving = false; }
     }
 
     // ── Connection tests ──────────────────────────────────────────────────
@@ -834,5 +907,13 @@
         builder.AddAttribute(1, "style", $"color:{(result.Value.Ok ? "#198754" : "#dc3545")};font-size:.85em");
         builder.AddContent(2, (result.Value.Ok ? "✓ " : "✗ ") + result.Value.Msg);
         builder.CloseElement();
+    };
+
+    private bool CanSync(string type) => type switch
+    {
+        "AniList" => true,
+        "MyAnimeList" => !string.IsNullOrWhiteSpace(_malClientId),
+        "AnimeSchedule" => !string.IsNullOrWhiteSpace(_animeScheduleApplicationToken),
+        _ => false
     };
 }

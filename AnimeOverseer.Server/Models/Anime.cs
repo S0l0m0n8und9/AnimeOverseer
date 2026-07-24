@@ -32,6 +32,11 @@ public class Anime
     [NotMapped]
     public bool HasEnglishTitle { get; set; }
 
+    // Provider-supplied English, romaji, native, and synonym titles used only
+    // while resolving the catalogue identity. They are intentionally not stored.
+    [NotMapped]
+    public List<string> AlternativeTitles { get; set; } = new();
+
     public string? OriginalTitle { get; set; }
 
     public string? Synopsis { get; set; }

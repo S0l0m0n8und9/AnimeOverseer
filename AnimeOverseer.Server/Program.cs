@@ -27,6 +27,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpClient<AniListApiService>();
 builder.Services.AddHttpClient<MyAnimeListApiService>();
+builder.Services.AddHttpClient<AnimeScheduleApiService>();
 // Retained only so legacy Kitsu enrichment jobs can finish; it is not a catalogue source.
 builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<AnimeCacheService>();
