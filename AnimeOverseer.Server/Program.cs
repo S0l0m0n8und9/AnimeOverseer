@@ -25,9 +25,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-// JikanApiService gets its own typed HttpClient; AnimeCacheService is the primary IAnimeDataSource
-builder.Services.AddHttpClient<JikanApiService>();
 builder.Services.AddHttpClient<AniListApiService>();
+builder.Services.AddHttpClient<MyAnimeListApiService>();
+// Retained only so legacy Kitsu enrichment jobs can finish; it is not a catalogue source.
 builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<AnimeCacheService>();
 builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCacheService>());

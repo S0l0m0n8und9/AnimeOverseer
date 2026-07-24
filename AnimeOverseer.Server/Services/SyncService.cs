@@ -12,7 +12,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         var (years, seasons) = ParseJikanParams(job.Parameters);
         // TotalCount is 0 because total anime across all pages is unknown upfront.
         job.TotalCount = 0;
-        Log(job, $"Sync started — {seasons.Length} season(s) × {years.Length} year(s)");
+        Log(job, $"AniList catalogue sync started — {seasons.Length} season(s) × {years.Length} year(s)");
         await db.SaveChangesAsync(ct);
 
         foreach (var year in years)

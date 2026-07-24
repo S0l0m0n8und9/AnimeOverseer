@@ -4,709 +4,154 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.Services;
 
-public class AnimeCacheService : IAnimeDataSource
+/// <summary>The database is the catalogue identity boundary; provider IDs are optional metadata.</summary>
+public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, MyAnimeListApiService myAnimeList, ImageCacheService imageCache) : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
-
-    private readonly AnimeDbContext _db;
-    private readonly JikanApiService _jikan;
-    private readonly AniListApiService _aniList;
-    private readonly KitsuApiService _kitsu;
-    private readonly ImageCacheService _imageCache;
-
-    public AnimeCacheService(AnimeDbContext db, JikanApiService jikan, AniListApiService aniList, KitsuApiService kitsu, ImageCacheService imageCache)
-    {
-        _db = db;
-        _jikan = jikan;
-        _aniList = aniList;
-        _kitsu = kitsu;
-        _imageCache = imageCache;
-    }
+    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
         if (!forceRefresh)
         {
-            var cached = await LoadCachedYear(year);
+            var cached = await Query().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
             if (cached.Count > 0) return cached;
         }
-        return await FetchAndCacheYear(year);
+        await FetchAndCacheSeasonsAsync(year, [season]);
+        return await Query().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
     }
 
-    public async Task<List<Anime>> SearchAsync(string query)
+    public async Task<List<Anime>> SearchAsync(string search)
     {
-        var searchTerms = NormalizeSearchText(query);
-        if (searchTerms.Length == 0) return [];
-
-        // Search the catalogue first. Jikan's search endpoint is intentionally fuzzy and
-        // can rank an alternate name above the title displayed by the application.
-        var cached = await BaseQuery()
-            .Where(a => a.Title.Contains(query) ||
-                        (a.OriginalTitle != null && a.OriginalTitle.Contains(query)))
-            .ToListAsync();
-
-        // Also account for harmless presentation differences such as punctuation,
-        // apostrophes, and repeated whitespace (e.g. "Kaguya-sama" / "Kaguya sama").
-        var normalizedCached = BaseQuery()
-            .AsEnumerable()
-            .Where(a => TitleMatches(a.Title, searchTerms) || TitleMatches(a.OriginalTitle, searchTerms))
-            .ToList();
-
-        var remote = await _jikan.SearchAsync(query);
-
-        return cached
-            .Concat(normalizedCached)
-            .Concat(remote)
-            .GroupBy(a => a.MALId is > 0 ? $"mal:{a.MALId}" : $"title:{a.Title}", StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .OrderByDescending(a => TitleMatches(a.Title, searchTerms))
-            .ThenByDescending(a => TitleMatches(a.OriginalTitle, searchTerms))
-            .ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var local = await Query().Where(a => a.Title.Contains(search) || (a.OriginalTitle != null && a.OriginalTitle.Contains(search))).ToListAsync();
+        try
+        {
+            var remote = await aniList.SearchAsync(search);
+            await UpsertAsync(remote, null);
+            var ids = remote.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).ToList();
+            var fetched = await Query().Where(a => a.AniListId != null && ids.Contains(a.AniListId.Value)).ToListAsync();
+            return local.Concat(fetched).GroupBy(a => a.Id).Select(g => g.First()).OrderBy(a => a.Title).ToList();
+        }
+        catch { return local; }
     }
 
-    private static bool TitleMatches(string? title, string normalizedQuery) =>
-        !string.IsNullOrWhiteSpace(title) && NormalizeSearchText(title).Contains(normalizedQuery, StringComparison.Ordinal);
-
-    private static string NormalizeSearchText(string value) =>
-        new string(value
-            .Where(char.IsLetterOrDigit)
-            .Select(char.ToLowerInvariant)
-            .ToArray());
-
+    // id is always this application's Anime.Id, never a provider ID.
     public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
-        if (!forceRefresh)
-        {
-            var cached = await _db.Animes
-                .Include(a => a.Season)
-                .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
-                .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
-                .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
-                .FirstOrDefaultAsync(a => a.MALId == id && a.CachedAt != null);
-
-            if (cached != null) return cached;
-        }
-
-        var anime = await _jikan.GetByIdAsync(id);
-        if (anime == null) return null;
-
-        await EnrichSingleAsync(anime);
-
-        if (anime.MALId.HasValue && anime.MALId.Value > 0)
-        {
-            var existing = await _db.Animes
-                .Include(a => a.Season)
-                .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
-                .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
-                .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
-                .FirstOrDefaultAsync(a => a.MALId == anime.MALId);
-            if (existing != null)
-            {
-                UpdateAnimeFields(existing, anime);
-                existing.LocalImagePath = await _imageCache.CacheImageAsync(anime.ImageUrl, anime.MALId.Value);
-                await _db.SaveChangesAsync();
-                return existing;
-            }
-
-            var unknownSeason = await GetOrCreateSeason("unknown", 0);
-            anime.SeasonId = unknownSeason.Id;
-            anime.CachedAt = DateTime.UtcNow;
-            anime.LocalImagePath = await _imageCache.CacheImageAsync(anime.ImageUrl, anime.MALId.Value);
-            _db.Animes.Add(anime);
-            await _db.SaveChangesAsync();
-        }
-
-        return anime;
+        var cached = await Query().FirstOrDefaultAsync(a => a.Id == id);
+        if (cached == null || !forceRefresh || cached.AniListId is not > 0) return cached;
+        var remote = await aniList.GetByAniListIdAsync(cached.AniListId.Value);
+        if (remote == null) return cached;
+        await UpsertAsync([remote], cached.SeasonId);
+        return await Query().FirstOrDefaultAsync(a => a.Id == id);
     }
 
-    public async Task<List<Anime>> GetRecentAsync(int skip, int take)
+    public async Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
     {
-        return await BaseQuery()
-            .OrderByDescending(a => a.StartDate)
-            .ThenByDescending(a => a.CachedAt)
-            .Skip(skip)
-            .Take(take)
-            .ToListAsync();
-    }
-
-    private IQueryable<Anime> BaseQuery() => _db.Animes
-        .Include(a => a.Season)
-        .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
-        .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
-        .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic);
-
-    public async Task<int> GetTotalCountAsync() => await _db.Animes.CountAsync();
-
-    public async Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take)
-    {
-        var query = BaseQuery();
-        query = FilterQueryBuilder.Apply(query, state);
-        return await query
-            .OrderByDescending(a => a.StartDate)
-            .ThenByDescending(a => a.CachedAt)
-            .Skip(skip)
-            .Take(take)
-            .ToListAsync();
-    }
-
-    public async Task<int> GetFilteredCountAsync(FilterState state)
-    {
-        return await FilterQueryBuilder.Apply(BaseQuery(), state).CountAsync();
-    }
-
-    public async Task<List<string>> GetGenreNamesAsync() =>
-        (await _db.Genres.Select(g => g.Name).ToListAsync())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    public async Task<List<string>> GetThemeNamesAsync() =>
-        (await _db.Themes.Select(t => t.Name).ToListAsync())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    public async Task<List<string>> GetDemographicNamesAsync() =>
-        (await _db.Demographics.Select(d => d.Name).ToListAsync())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    public async Task<List<Anime>> GetMostFavoritedAsync(int skip, int take)
-    {
-        return await BaseQuery()
-            .OrderByDescending(a => a.Requests.Count)
-            .ThenByDescending(a => a.StartDate)
-            .ThenByDescending(a => a.CachedAt)
-            .Skip(skip)
-            .Take(take)
-            .ToListAsync();
-    }
-
-    public Task<List<Genre>> GetAllGenresAsync() => _jikan.GetAllGenresAsync();
-    public Task<List<Theme>> GetAllThemesAsync() => _jikan.GetAllThemesAsync();
-    public Task<List<Demographic>> GetAllDemographicsAsync() => _jikan.GetAllDemographicsAsync();
-
-    public async Task<int> GetMostFavoritedCountAsync()
-    {
-        return await _db.Animes.CountAsync();
-    }
-
-    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int rootMalId, bool forceRefresh = false)
-    {
-        if (!forceRefresh)
+        foreach (var season in seasons)
         {
-            var cached = await _db.CachedAnimeRelations
-                .Where(r => r.RootMalId == rootMalId)
-                .ToListAsync();
-
-            if (cached.Count > 0)
-                return cached.Select(r => new AnimeRelation { RelationType = r.RelationType, MALId = r.RelatedMalId, Name = r.Name }).ToList();
-        }
-
-        var allRelations = await FetchRelationsBfsAsync(rootMalId);
-
-        var stale = await _db.CachedAnimeRelations.Where(r => r.RootMalId == rootMalId).ToListAsync();
-        _db.CachedAnimeRelations.RemoveRange(stale);
-
-        var now = DateTime.UtcNow;
-        _db.CachedAnimeRelations.AddRange(allRelations.Select(r => new CachedAnimeRelation
-        {
-            RootMalId = rootMalId,
-            RelatedMalId = r.MALId,
-            RelationType = r.RelationType,
-            Name = r.Name,
-            CachedAt = now
-        }));
-        await _db.SaveChangesAsync();
-
-        return allRelations;
-    }
-
-    private async Task<List<AnimeRelation>> FetchRelationsBfsAsync(int rootMalId)
-    {
-        const int maxNodes = 25;
-        var visited = new HashSet<int> { rootMalId };
-        var queue = new Queue<int>();
-        var allRelations = new List<AnimeRelation>();
-
-        var initial = await _jikan.GetRelationsAsync(rootMalId);
-        foreach (var rel in initial.Where(r => visited.Add(r.MALId)))
-        {
-            allRelations.Add(rel);
-            queue.Enqueue(rel.MALId);
-        }
-
-        while (queue.Count > 0 && allRelations.Count < maxNodes)
-        {
-            await Task.Delay(400); // respect Jikan rate limit
-            var malId = queue.Dequeue();
-            var relations = await _jikan.GetRelationsAsync(malId);
-
-            foreach (var rel in relations.Where(r => r.MALId != rootMalId && visited.Add(r.MALId)))
-            {
-                allRelations.Add(rel);
-                if (allRelations.Count < maxNodes)
-                    queue.Enqueue(rel.MALId);
-            }
-        }
-
-        return allRelations;
-    }
-
-    // Returns true when an anime is missing commonly-useful fields worth enriching from secondary sources.
-    private static bool NeedsEnrichment(Anime a) => true;
-        //string.IsNullOrWhiteSpace(a.Synopsis) ||
-        //a.Episodes == null ||
-        //a.Rating == null;
-
-    // Copies fields from source into target only where target has no data.
-    private static void EnrichAnimeFields(Anime target, Anime source)
-    {
-        // Jikan falls back to its default (usually romaji) title when no English
-        // localization exists. Prefer an explicitly localized English title found
-        // in a secondary catalogue.
-        if (!target.HasEnglishTitle && source.HasEnglishTitle)
-        {
-            target.Title = source.Title;
-            target.HasEnglishTitle = true;
-        }
-        if (string.IsNullOrWhiteSpace(target.Synopsis) && !string.IsNullOrWhiteSpace(source.Synopsis))
-            target.Synopsis = source.Synopsis;
-        if (target.Episodes == null && source.Episodes != null)
-            target.Episodes = source.Episodes;
-        if (target.Rating == null && source.Rating != null)
-            target.Rating = source.Rating;
-        if (string.IsNullOrWhiteSpace(target.OriginalTitle) && !string.IsNullOrWhiteSpace(source.OriginalTitle))
-            target.OriginalTitle = source.OriginalTitle;
-        if (string.IsNullOrWhiteSpace(target.ImageUrl) && !string.IsNullOrWhiteSpace(source.ImageUrl))
-            target.ImageUrl = source.ImageUrl;
-        if ((target.AniListId == null || target.AniListId == 0) && source.AniListId is > 0)
-            target.AniListId = source.AniListId;
-        if ((target.KitsuId == null || target.KitsuId == 0) && source.KitsuId is > 0)
-            target.KitsuId = source.KitsuId;
-    }
-
-    // Enriches a single anime in-place using AniList (by MAL ID) then Kitsu (by title) as fallbacks.
-    private async Task EnrichSingleAsync(Anime anime)
-    {
-        if (!NeedsEnrichment(anime)) return;
-
-        if (anime.MALId is > 0)
-        {
-            try
-            {
-                var aniListData = await _aniList.GetByMalIdAsync(anime.MALId.Value);
-                if (aniListData != null) EnrichAnimeFields(anime, aniListData);
-            }
-            catch { }
-        }
-
-        if (NeedsEnrichment(anime) && !string.IsNullOrWhiteSpace(anime.Title))
-        {
-            try
-            {
-                var kitsuData = await _kitsu.GetByTitleAsync(anime.Title);
-                if (kitsuData != null) EnrichAnimeFields(anime, kitsuData);
-            }
-            catch { }
+            List<Anime> remote;
+            try { remote = await aniList.GetSeasonAnimesAsync(year, season, onPageFetched, ct); }
+            catch when (myAnimeList.IsConfigured) { remote = await myAnimeList.GetSeasonAsync(year, season, ct); }
+            var seasonRow = await GetOrCreateSeasonAsync(season, year, ct);
+            await UpsertAsync(remote, seasonRow.Id, ct);
         }
     }
 
-    // Fetches AniList data for all seasons in a year and returns lookups by MAL ID and by title.
-    private async Task<(Dictionary<int, Anime> ByMalId, Dictionary<string, Anime> ByTitle)> FetchAniListByYearAsync(int year)
-    {
-        var tasks = AllSeasons.Select(s => _aniList.GetSeasonAnimes(year, s));
-        var results = await Task.WhenAll(tasks);
-        var all = results.SelectMany(r => r).ToList();
-
-        var byMalId = all
-            .Where(a => a.MALId is > 0)
-            .GroupBy(a => a.MALId!.Value)
-            .ToDictionary(g => g.Key, g => g.First());
-
-        // Title lookup covers anime where AniList didn't provide idMal
-        var byTitle = new Dictionary<string, Anime>(StringComparer.OrdinalIgnoreCase);
-        foreach (var a in all)
-        {
-            if (!string.IsNullOrWhiteSpace(a.Title))
-                byTitle.TryAdd(a.Title.Trim(), a);
-            if (!string.IsNullOrWhiteSpace(a.OriginalTitle))
-                byTitle.TryAdd(a.OriginalTitle.Trim(), a);
-        }
-
-        return (byMalId, byTitle);
-    }
-
-    private async Task<List<Anime>> LoadCachedYear(int year)
-    {
-        var hasAny = await _db.Animes
-            .Include(a => a.Season)
-            .AnyAsync(a => a.Season.Year == year && a.CachedAt != null);
-
-        if (!hasAny) return [];
-
-        var all = await _db.Animes
-            .Include(a => a.Season)
-            .Include(a => a.AnimeGenres).ThenInclude(ag => ag.Genre)
-            .Include(a => a.AnimeThemes).ThenInclude(at => at.Theme)
-            .Include(a => a.AnimeDemographics).ThenInclude(ad => ad.Demographic)
-            .Where(a => a.Season.Year == year)
-            .ToListAsync();
-
-        // Deduplicate by MAL ID in memory — safety net for any stale DB duplicates
-        return all
-            .GroupBy(a => a.MALId.HasValue && a.MALId.Value > 0 ? a.MALId.Value : -a.Id)
-            .Select(g => g.OrderByDescending(a => a.CachedAt ?? DateTime.MinValue).ThenByDescending(a => a.Id).First())
-            .ToList();
-    }
-
-    // Public entry point for SyncService: fetch only the specified seasons with per-page progress callback.
-    public Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
-        => FetchAndCacheYear(year, seasons, onPageFetched, ct);
-
-    // Public entry point for the daily airing refresh: fetch /seasons/now + /seasons/upcoming and upsert any changed records.
     public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null)
     {
-        var nowTask = _jikan.FetchSeasonNowPagesAsync(onPageFetched);
-        var upcomingTask = _jikan.FetchSeasonUpcomingPagesAsync();
-        await Task.WhenAll(nowTask, upcomingTask);
-
-        var animes = nowTask.Result
-            .Concat(upcomingTask.Result)
-            .GroupBy(a => a.MALId)
-            .Select(g => g.First())
-            .ToList();
-
-        // Assign season records derived from each anime's start date
-        var groups = animes
-            .GroupBy(a => (Year: a.StartDate?.Year ?? DateTime.UtcNow.Year, Season: GetSeasonFromDate(a.StartDate)))
-            .ToList();
-
-        foreach (var group in groups)
+        var airing = await aniList.GetCurrentAsync(false, onPageFetched);
+        var upcoming = await aniList.GetCurrentAsync(true);
+        foreach (var group in airing.Concat(upcoming).GroupBy(a => (Year: a.StartDate?.Year ?? DateTime.UtcNow.Year, Season: SeasonName(a.StartDate))))
         {
-            var record = await GetOrCreateSeason(group.Key.Season, group.Key.Year);
-            foreach (var anime in group)
-                anime.SeasonId = record.Id;
+            var season = await GetOrCreateSeasonAsync(group.Key.Season, group.Key.Year, CancellationToken.None);
+            await UpsertAsync(group.ToList(), season.Id);
         }
-
-        var (aniListByMalId, aniListByTitle) = await FetchAniListByYearAsync(DateTime.UtcNow.Year);
-
-        foreach (var anime in animes.Where(NeedsEnrichment))
-        {
-            Anime? aniListMatch = null;
-            if (anime.MALId is > 0)
-                aniListByMalId.TryGetValue(anime.MALId.Value, out aniListMatch);
-            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.Title))
-                aniListByTitle.TryGetValue(anime.Title.Trim(), out aniListMatch);
-            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.OriginalTitle))
-                aniListByTitle.TryGetValue(anime.OriginalTitle.Trim(), out aniListMatch);
-            if (aniListMatch != null)
-                EnrichAnimeFields(anime, aniListMatch);
-        }
-
-        var imageTasks = animes
-            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 && !string.IsNullOrEmpty(a.ImageUrl))
-            .Select(async a => { a.LocalImagePath = await _imageCache.CacheImageAsync(a.ImageUrl, a.MALId!.Value); });
-        await Task.WhenAll(imageTasks);
-
-        await UpsertAnimesAsync(animes);
     }
 
-    private static string GetSeasonFromDate(DateTime? date) =>
-        (date?.Month ?? DateTime.UtcNow.Month) switch
-        {
-            <= 3 => "winter",
-            <= 6 => "spring",
-            <= 9 => "summer",
-            _    => "fall"
-        };
-
-    private async Task<List<Anime>> FetchAndCacheYear(int year,
-        string[]? selectedSeasons = null, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int animeId, bool forceRefresh = false)
     {
-        var seasonsToFetch = selectedSeasons ?? AllSeasons;
-
-        // Fetch each season sequentially to respect Jikan rate limit (~3 req/sec)
-        var seasonAnimes = new List<(string Season, List<Anime> Animes)>();
-        foreach (var s in seasonsToFetch)
+        var root = await db.Animes.FindAsync(animeId);
+        if (root?.AniListId is not > 0) return [];
+        var source = await aniList.GetByAniListIdAsync(root.AniListId.Value);
+        if (source == null) return [];
+        // Relation nodes are supplied in the selected GraphQL response; fetch their full records before caching.
+        // The underlying JSON is intentionally not retained on Anime, so resolve the direct relations via a compact re-query.
+        var related = await aniList.GetRelationsAsync(root.AniListId.Value);
+        var result = new List<AnimeRelation>();
+        foreach (var relation in related)
         {
-            var animes = await _jikan.FetchSeasonPagesAsync(year, s, onPageFetched, ct);
-            seasonAnimes.Add((s, animes));
-            if (s != seasonsToFetch[^1])
-                await Task.Delay(400, ct);
+            var item = await aniList.GetByAniListIdAsync(relation.AniListId);
+            if (item == null) continue;
+            await UpsertAsync([item], root.SeasonId);
+            var saved = await db.Animes.SingleAsync(a => a.AniListId == item.AniListId);
+            result.Add(new AnimeRelation { AnimeId = saved.Id, RelationType = relation.RelationType, Name = saved.Title });
         }
+        return result;
+    }
 
-        ct.ThrowIfCancellationRequested();
+    public Task<List<Anime>> GetRecentAsync(int skip, int take) => Query().OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
+    public Task<int> GetTotalCountAsync() => db.Animes.CountAsync();
+    public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => FilterQueryBuilder.Apply(Query(), state).OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
+    public Task<int> GetFilteredCountAsync(FilterState state) => FilterQueryBuilder.Apply(Query(), state).CountAsync();
+    public Task<List<string>> GetGenreNamesAsync() => db.Genres.Select(x => x.Name).OrderBy(x => x).ToListAsync();
+    public Task<List<string>> GetThemeNamesAsync() => db.Themes.Select(x => x.Name).OrderBy(x => x).ToListAsync();
+    public Task<List<string>> GetDemographicNamesAsync() => db.Demographics.Select(x => x.Name).OrderBy(x => x).ToListAsync();
+    public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take) => Query().OrderByDescending(a => a.Requests.Count).Skip(skip).Take(take).ToListAsync();
+    public Task<int> GetMostFavoritedCountAsync() => db.Animes.CountAsync();
+    public Task<List<Genre>> GetAllGenresAsync() => db.Genres.OrderBy(x => x.Name).ToListAsync();
+    public Task<List<Theme>> GetAllThemesAsync() => db.Themes.OrderBy(x => x.Name).ToListAsync();
+    public Task<List<Demographic>> GetAllDemographicsAsync() => db.Demographics.OrderBy(x => x.Name).ToListAsync();
 
-        // Fetch AniList data for the same year in parallel (no strict rate limit)
-        var (aniListByMalId, aniListByTitle) = await FetchAniListByYearAsync(year);
-
-        // Ensure Season records exist
-        var seasonIds = new Dictionary<string, int>();
-        foreach (var (s, _) in seasonAnimes)
+    private async Task UpsertAsync(List<Anime> incoming, int? fixedSeasonId, CancellationToken ct = default)
+    {
+        var aniListIds = incoming.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).Distinct().ToList();
+        var malIds = incoming.Where(a => a.MALId is > 0).Select(a => a.MALId!.Value).Distinct().ToList();
+        var existingRows = await db.Animes.Where(a => (a.AniListId != null && aniListIds.Contains(a.AniListId.Value)) || (a.MALId != null && malIds.Contains(a.MALId.Value))).ToListAsync(ct);
+        var existing = new Dictionary<string, Anime>();
+        foreach (var row in existingRows)
         {
-            var record = await GetOrCreateSeason(s, year);
-            seasonIds[s] = record.Id;
+            if (row.AniListId is > 0) existing[$"a:{row.AniListId}"] = row;
+            if (row.MALId is > 0) existing[$"m:{row.MALId}"] = row;
         }
-
-        // Assign season IDs and enrich from AniList where Jikan data is incomplete
-        var allAnimes = seasonAnimes
-            .SelectMany(x =>
+        var sources = incoming.Where(a => a.AniListId is > 0 || a.MALId is > 0).GroupBy(Key).Select(g => g.First()).ToList();
+        foreach (var source in sources)
+        {
+            if (!existing.TryGetValue(Key(source), out var target) &&
+                !(source.MALId is > 0 && existing.TryGetValue($"m:{source.MALId}", out target)))
             {
-                foreach (var a in x.Animes) a.SeasonId = seasonIds[x.Season];
-                return x.Animes;
-            })
-            .ToList();
-
-        foreach (var anime in allAnimes.Where(NeedsEnrichment))
-        {
-            Anime? aniListMatch = null;
-
-            if (anime.MALId is > 0)
-                aniListByMalId.TryGetValue(anime.MALId.Value, out aniListMatch);
-
-            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.Title))
-                aniListByTitle.TryGetValue(anime.Title.Trim(), out aniListMatch);
-
-            if (aniListMatch == null && !string.IsNullOrWhiteSpace(anime.OriginalTitle))
-                aniListByTitle.TryGetValue(anime.OriginalTitle.Trim(), out aniListMatch);
-
-            if (aniListMatch != null)
-                EnrichAnimeFields(anime, aniListMatch);
-        }
-
-        // Download images in parallel
-        var imageTasks = allAnimes
-            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 && !string.IsNullOrEmpty(a.ImageUrl))
-            .Select(async a => { a.LocalImagePath = await _imageCache.CacheImageAsync(a.ImageUrl, a.MALId!.Value); });
-        await Task.WhenAll(imageTasks);
-
-        await UpsertAnimesAsync(allAnimes);
-
-        return await LoadCachedYear(year);
-    }
-
-    private async Task<Season> GetOrCreateSeason(string name, int year)
-    {
-        var season = await _db.Seasons.FirstOrDefaultAsync(s => s.Name == name && s.Year == year);
-        if (season != null) return season;
-
-        season = new Season { Name = name, Year = year };
-        _db.Seasons.Add(season);
-        await _db.SaveChangesAsync();
-        return season;
-    }
-
-    private async Task PurgeAllDuplicatesAsync()
-    {
-        var allWithMalIds = await _db.Animes
-            .Where(a => a.MALId != null && a.MALId.Value > 0)
-            .Select(a => new { a.Id, MalId = a.MALId!.Value })
-            .ToListAsync();
-
-        var idsToDelete = allWithMalIds
-            .GroupBy(a => a.MalId)
-            .Where(g => g.Count() > 1)
-            .SelectMany(g => g.OrderBy(a => a.Id).Skip(1).Select(a => a.Id))
-            .ToList();
-
-        if (idsToDelete.Count > 0)
-        {
-            var toDelete = await _db.Animes.Where(a => idsToDelete.Contains(a.Id)).ToListAsync();
-            _db.Animes.RemoveRange(toDelete);
-            await _db.SaveChangesAsync();
-        }
-    }
-
-    private async Task UpsertAnimesAsync(List<Anime> animes)
-    {
-        // Purge ALL duplicates in the DB before upserting, not just the current batch
-        await PurgeAllDuplicatesAsync();
-
-        var malIds = animes
-            .Where(a => a.MALId.HasValue && a.MALId.Value > 0)
-            .Select(a => a.MALId!.Value)
-            .Distinct()
-            .ToList();
-
-        var existingRows = await _db.Animes
-            .Where(a => a.MALId != null && malIds.Contains(a.MALId.Value))
-            .ToListAsync();
-
-        var existingByMalId = existingRows.ToDictionary(a => a.MALId!.Value);
-
-        // Track MAL IDs seen in this batch to prevent duplicates across seasons in the same fetch
-        var seenMalIds = new HashSet<int>(existingByMalId.Keys);
-
-        foreach (var anime in animes)
-        {
-            if (anime.MALId.HasValue && anime.MALId.Value > 0)
-            {
-                if (existingByMalId.TryGetValue(anime.MALId.Value, out var existing))
-                {
-                    UpdateAnimeFields(existing, anime);
-                    continue;
-                }
-
-                if (!seenMalIds.Add(anime.MALId.Value))
-                    continue; // Already queued for insert earlier in this batch
+                target = new Anime { AniListId = source.AniListId, SeasonId = fixedSeasonId ?? await UnknownSeasonIdAsync(ct) };
+                db.Animes.Add(target);
             }
-
-            // Title-based dedup fallback within same season (catches cross-source duplicates later)
-            if (anime.SeasonId > 0)
-            {
-                var titleLower = anime.Title.ToLowerInvariant().Trim();
-                var titleMatch = await _db.Animes.FirstOrDefaultAsync(a =>
-                    a.SeasonId == anime.SeasonId &&
-                    (a.Title.ToLower() == titleLower ||
-                     (a.OriginalTitle != null && a.OriginalTitle.ToLower() == titleLower)));
-
-                if (titleMatch != null)
-                {
-                    UpdateAnimeFields(titleMatch, anime);
-                    continue;
-                }
-            }
-
-            anime.CachedAt = DateTime.UtcNow;
-            _db.Animes.Add(anime);
+            Copy(target, source);
+            if (source.AniListId is > 0) existing[$"a:{source.AniListId}"] = target;
+            if (source.MALId is > 0) existing[$"m:{source.MALId}"] = target;
+            if (fixedSeasonId is > 0) target.SeasonId = fixedSeasonId.Value;
+            target.CachedAt = DateTime.UtcNow;
         }
-
-        await _db.SaveChangesAsync();
-        await SyncGenresBatchAsync(animes);
-    }
-
-    private async Task SyncGenresBatchAsync(List<Anime> sourceAnimes)
-    {
-        var sourcesWithData = sourceAnimes
-            .Where(a => a.MALId.HasValue && a.MALId.Value > 0 &&
-                        (a.AnimeGenres.Count > 0 || a.AnimeThemes.Count > 0 || a.AnimeDemographics.Count > 0))
-            .ToList();
-        if (sourcesWithData.Count == 0) return;
-
-        var malIds = sourcesWithData.Select(a => a.MALId!.Value).ToList();
-        var dbAnimes = await _db.Animes
-            .Where(a => a.MALId != null && malIds.Contains(a.MALId.Value))
-            .ToListAsync();
-        var dbByMalId = dbAnimes.ToDictionary(a => a.MALId!.Value);
-        var dbIds = dbAnimes.Select(a => a.Id).ToList();
-
-        await SyncTagsAsync(
-            sourcesWithData,
-            dbByMalId,
-            dbIds,
-            a => a.AnimeGenres.Select(ag => ag.Genre.Name.Trim()),
-            names => _db.Genres.Where(g => names.Contains(g.Name)).ToListAsync(),
-            name => new Genre { Name = name },
-            (g, existing) => existing.TryAdd(g.Name, g),
-            (animeId, tag) => _db.AnimeGenres.Add(new AnimeGenre { AnimeId = animeId, GenreId = tag.Id }),
-            animeIds => _db.AnimeGenres.Where(ag => animeIds.Contains(ag.AnimeId)).ToListAsync(),
-            links => _db.AnimeGenres.RemoveRange(links));
-
-        await SyncTagsAsync(
-            sourcesWithData,
-            dbByMalId,
-            dbIds,
-            a => a.AnimeThemes.Select(at => at.Theme.Name.Trim()),
-            names => _db.Themes.Where(t => names.Contains(t.Name)).ToListAsync(),
-            name => new Theme { Name = name },
-            (t, existing) => existing.TryAdd(t.Name, t),
-            (animeId, tag) => _db.AnimeThemes.Add(new AnimeTheme { AnimeId = animeId, ThemeId = tag.Id }),
-            animeIds => _db.AnimeThemes.Where(at => animeIds.Contains(at.AnimeId)).ToListAsync(),
-            links => _db.AnimeThemes.RemoveRange(links));
-
-        await SyncTagsAsync(
-            sourcesWithData,
-            dbByMalId,
-            dbIds,
-            a => a.AnimeDemographics.Select(ad => ad.Demographic.Name.Trim()),
-            names => _db.Demographics.Where(d => names.Contains(d.Name)).ToListAsync(),
-            name => new Demographic { Name = name },
-            (d, existing) => existing.TryAdd(d.Name, d),
-            (animeId, tag) => _db.AnimeDemographics.Add(new AnimeDemographic { AnimeId = animeId, DemographicId = tag.Id }),
-            animeIds => _db.AnimeDemographics.Where(ad => animeIds.Contains(ad.AnimeId)).ToListAsync(),
-            links => _db.AnimeDemographics.RemoveRange(links));
-    }
-
-    private async Task SyncTagsAsync<TLink, TTag>(
-        List<Anime> sources,
-        Dictionary<int, Anime> dbByMalId,
-        List<int> dbIds,
-        Func<Anime, IEnumerable<string>> getNames,
-        Func<List<string>, Task<List<TTag>>> loadExisting,
-        Func<string, TTag> createTag,
-        Action<TTag, Dictionary<string, TTag>> addToDict,
-        Action<int, TTag> addLink,
-        Func<List<int>, Task<List<TLink>>> loadOldLinks,
-        Action<List<TLink>> removeLinks)
-        where TTag : class
-        where TLink : class
-    {
-        // Collect names from sources that have entries in this category
-        var sourcesWithTags = sources.Where(a => getNames(a).Any()).ToList();
-        if (sourcesWithTags.Count == 0) return;
-
-        var allNames = sourcesWithTags
-            .SelectMany(getNames)
-            .Where(n => !string.IsNullOrEmpty(n))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var existingRows = await loadExisting(allNames);
-        var existing = new Dictionary<string, TTag>(StringComparer.OrdinalIgnoreCase);
-        foreach (var tag in existingRows)
-            addToDict(tag, existing);
-
-        // Cast to access Name property via dynamic to keep the helper generic
-        foreach (var name in allNames.Where(n => !existing.ContainsKey(n)))
+        await db.SaveChangesAsync(ct);
+        foreach (var source in sources)
         {
-            var tag = createTag(name);
-            _db.Add(tag);
-            existing[name] = tag;
+            var target = existing[Key(source)];
+            if (!string.IsNullOrWhiteSpace(source.ImageUrl)) target.LocalImagePath = await imageCache.CacheImageAsync(source.ImageUrl, target.Id);
+            await ReplaceTagsAsync(target, source, ct);
         }
-        await _db.SaveChangesAsync();
-
-        var affectedIds = sourcesWithTags
-            .Where(a => dbByMalId.ContainsKey(a.MALId!.Value))
-            .Select(a => dbByMalId[a.MALId!.Value].Id)
-            .ToList();
-
-        var oldLinks = await loadOldLinks(affectedIds);
-        removeLinks(oldLinks);
-
-        var addedLinks = new HashSet<(int, int)>();
-        foreach (var source in sourcesWithTags)
-        {
-            if (!dbByMalId.TryGetValue(source.MALId!.Value, out var dbAnime)) continue;
-            foreach (var name in getNames(source).ToList())
-            {
-                if (string.IsNullOrEmpty(name) || !existing.TryGetValue(name, out var tag)) continue;
-                var tagId = (int)((dynamic)tag).Id;
-                if (!addedLinks.Add((dbAnime.Id, tagId))) continue;
-                addLink(dbAnime.Id, tag);
-            }
-        }
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
     }
 
-    private void UpdateAnimeFields(Anime existing, Anime source)
+    private static string Key(Anime anime) => anime.AniListId is > 0 ? $"a:{anime.AniListId}" : $"m:{anime.MALId}";
+
+    private static void Copy(Anime t, Anime s) { t.Title=s.Title; t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl; t.MALId=s.MALId; t.AniListId=s.AniListId; t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate; }
+    private async Task ReplaceTagsAsync(Anime target, Anime source, CancellationToken ct)
     {
-        existing.Title = source.Title;
-        existing.OriginalTitle = source.OriginalTitle;
-        existing.Synopsis = source.Synopsis;
-        existing.ImageUrl = source.ImageUrl;
-        if (!string.IsNullOrEmpty(source.LocalImagePath))
-            existing.LocalImagePath = source.LocalImagePath;
-        existing.Type = source.Type;
-        existing.Episodes = source.Episodes;
-        existing.Rating = source.Rating;
-        existing.Status = source.Status;
-        existing.StartDate = source.StartDate;
-        existing.EndDate = source.EndDate;
-        if (source.AniListId is > 0) existing.AniListId = source.AniListId;
-        if (source.KitsuId is > 0) existing.KitsuId = source.KitsuId;
-        existing.CachedAt = DateTime.UtcNow;
+        db.AnimeGenres.RemoveRange(await db.AnimeGenres.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
+        db.AnimeThemes.RemoveRange(await db.AnimeThemes.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
+        db.AnimeDemographics.RemoveRange(await db.AnimeDemographics.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
+        foreach (var name in source.AnimeGenres.Select(x => x.Genre.Name).Distinct()) { var tag = await db.Genres.FirstOrDefaultAsync(x => x.Name == name, ct) ?? new Genre { Name=name }; if (tag.Id == 0) db.Genres.Add(tag); db.AnimeGenres.Add(new() { AnimeId=target.Id, Genre=tag }); }
+        foreach (var name in source.AnimeThemes.Select(x => x.Theme.Name).Distinct()) { var tag = await db.Themes.FirstOrDefaultAsync(x => x.Name == name, ct) ?? new Theme { Name=name }; if (tag.Id == 0) db.Themes.Add(tag); db.AnimeThemes.Add(new() { AnimeId=target.Id, Theme=tag }); }
+        foreach (var name in source.AnimeDemographics.Select(x => x.Demographic.Name).Distinct()) { var tag = await db.Demographics.FirstOrDefaultAsync(x => x.Name == name, ct) ?? new Demographic { Name=name }; if (tag.Id == 0) db.Demographics.Add(tag); db.AnimeDemographics.Add(new() { AnimeId=target.Id, Demographic=tag }); }
     }
+    private async Task<Season> GetOrCreateSeasonAsync(string name, int year, CancellationToken ct) { var season=await db.Seasons.FirstOrDefaultAsync(x=>x.Name==name&&x.Year==year,ct); if(season != null) return season; season=new Season{Name=name,Year=year}; db.Seasons.Add(season); await db.SaveChangesAsync(ct); return season; }
+    private async Task<int> UnknownSeasonIdAsync(CancellationToken ct) => (await GetOrCreateSeasonAsync("unknown", 0, ct)).Id;
+    private static string SeasonName(DateTime? date) => (date?.Month ?? DateTime.UtcNow.Month) switch { <=3=>"winter",<=6=>"spring",<=9=>"summer",_=>"fall" };
 }

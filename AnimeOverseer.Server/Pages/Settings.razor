@@ -16,7 +16,7 @@
     <h2 style="margin-top:0">Data Sources</h2>
 
     <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
-        @foreach (var src in new[] { ("Jikan", "MyAnimeList via Jikan"), ("AniList", "AniList"), ("Kitsu", "Kitsu") })
+        @foreach (var src in new[] { ("AniList", "AniList catalogue (primary)") })
         {
             var (type, label) = src;
             var active = IsActive(type);
@@ -57,7 +57,7 @@
                     <div style="font-size:.8em;color:#888;margin-bottom:.5rem">Never run</div>
                 }
 
-                @if (type == "Jikan")
+                @if (type == "AniList")
                 {
                     <div style="margin-bottom:.5rem">
                         <div style="font-size:.78em;color:#aaa;margin-bottom:.3rem">Years</div>
@@ -100,7 +100,7 @@
 
                 <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem"
                         @onclick="() => TriggerSync(type)"
-                        disabled="@(active != null || _triggering || (type == "Jikan" && (_jikanYears.Count == 0 || _jikanSeasons.Count == 0)))">
+                        disabled="@(active != null || _triggering || (type == "AniList" && (_jikanYears.Count == 0 || _jikanSeasons.Count == 0)))">
                     Sync Now
                 </button>
             </div>
@@ -404,7 +404,7 @@
         try
         {
             string? parameters = null;
-            if (jobType == "Jikan")
+            if (jobType == "AniList")
                 parameters = JsonSerializer.Serialize(new
                 {
                     years = _jikanYears.OrderBy(y => y),

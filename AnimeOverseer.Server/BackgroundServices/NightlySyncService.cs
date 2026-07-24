@@ -51,10 +51,10 @@ public class NightlySyncService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AnimeDbContext>();
         var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
 
-        // Create a sync job for full Jikan sync (all years and seasons)
+        // Create a sync job for the AniList catalogue (all years and seasons).
         var job = new SyncJob
         {
-            JobType = "Jikan",
+            JobType = "AniList",
             Status = "Queued",
             QueuedAt = DateTime.UtcNow,
             Parameters = JsonSerializer.Serialize(new { years = new int[] { DateTime.UtcNow.Year, DateTime.UtcNow.Year + 1, DateTime.UtcNow.Year + 2, DateTime.UtcNow.Year + 3 }, seasons = new[] { "spring", "summer", "fall", "winter" } })
@@ -63,7 +63,7 @@ public class NightlySyncService : BackgroundService
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync(stoppingToken);
 
-        _logger.LogInformation("Nightly sync: queued Jikan sync job {JobId}", job.Id);
+        _logger.LogInformation("Nightly sync: queued AniList sync job {JobId}", job.Id);
 
         // Wait for job to complete (with timeout)
         var completed = await WaitForJobCompletionAsync(db, job.Id, stoppingToken, TimeSpan.FromHours(6));

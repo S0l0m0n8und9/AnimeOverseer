@@ -172,7 +172,7 @@ public class JikanApiService : IAnimeDataSource
                     var entryMalId = entry.TryGetProperty("mal_id", out var mid) ? mid.GetInt32() : 0;
                     var name = entry.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
                     if (entryMalId > 0)
-                        relations.Add(new AnimeRelation { RelationType = relType, MALId = entryMalId, Name = name });
+                        relations.Add(new AnimeRelation { RelationType = relType, AnimeId = entryMalId, Name = name });
                 }
             }
         }

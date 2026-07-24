@@ -17,7 +17,7 @@ namespace AnimeOverseer.Server.Services
         Task<List<Genre>> GetAllGenresAsync();
         Task<List<Theme>> GetAllThemesAsync();
         Task<List<Demographic>> GetAllDemographicsAsync();
-        Task<List<AnimeRelation>> GetAllRelationsAsync(int malId, bool forceRefresh = false);
+        Task<List<AnimeRelation>> GetAllRelationsAsync(int animeId, bool forceRefresh = false);
         Task<List<Anime>> GetMostFavoritedAsync(int skip, int take);
         Task<int> GetMostFavoritedCountAsync();
     }

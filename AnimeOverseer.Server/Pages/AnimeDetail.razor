@@ -229,7 +229,7 @@
                                 <div class="relation-entries">
                                     @foreach (var rel in group.Value)
                                     {
-                                        <a href="/anime/@rel.MALId" class="relation-entry">@rel.Name</a>
+                                        <a href="/anime/@rel.AnimeId" class="relation-entry">@rel.Name</a>
                                     }
                                 </div>
                             </div>
@@ -299,17 +299,17 @@
             isLoading = false;
         }
 
-        if (anime?.MALId is > 0)
-            _ = LoadRelationsAsync(anime.MALId.Value);
+        if (anime != null)
+            _ = LoadRelationsAsync(anime.Id);
     }
 
-    private async Task LoadRelationsAsync(int malId, bool forceRefresh = false)
+    private async Task LoadRelationsAsync(int animeId, bool forceRefresh = false)
     {
         isLoadingRelations = true;
         await InvokeAsync(StateHasChanged);
         try
         {
-            var relations = await AnimeDataSource.GetAllRelationsAsync(malId, forceRefresh);
+            var relations = await AnimeDataSource.GetAllRelationsAsync(animeId, forceRefresh);
             if (anime != null)
                 anime.Relations = relations;
         }
@@ -330,8 +330,8 @@
         try
         {
             anime = await AnimeDataSource.GetByIdAsync(Id, forceRefresh: true);
-            if (anime?.MALId is > 0)
-                _ = LoadRelationsAsync(anime.MALId.Value, forceRefresh: true);
+            if (anime != null)
+                _ = LoadRelationsAsync(anime.Id, forceRefresh: true);
         }
         catch (Exception ex)
         {

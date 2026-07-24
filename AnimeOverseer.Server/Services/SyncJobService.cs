@@ -28,9 +28,9 @@ public class SyncJobService(AnimeDbContext db)
             j.JobType == failed.JobType && (j.Status == "Queued" || j.Status == "Running"));
         if (alreadyActive) return null;
 
-        // Jikan fetches from the API by season/year and is idempotent — re-run with same params.
-        // AniList/Kitsu query the local DB ordered by Id, so we can skip already-processed records.
-        var parameters = failed.JobType == "Jikan"
+        // Catalogue imports are idempotent when re-run with the same season parameters.
+        // Legacy enrichment jobs query the local DB ordered by Id, so they can skip records.
+        var parameters = failed.JobType is "Jikan" or "AniList"
             ? failed.Parameters
             : JsonSerializer.Serialize(new { skipCount = failed.ProcessedCount });
 

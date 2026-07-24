@@ -78,14 +78,14 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
         {
             await (job.JobType switch
             {
-                "Jikan"   => sync.RunJikanSyncAsync(job, jobCts.Token),
-                "AniList" => sync.RunAniListSyncAsync(job, jobCts.Token),
+                "Jikan"   => sync.RunJikanSyncAsync(job, jobCts.Token), // legacy queued jobs
+                "AniList" => sync.RunJikanSyncAsync(job, jobCts.Token),
                 "Kitsu"   => sync.RunKitsuSyncAsync(job, jobCts.Token),
                 _         => Task.CompletedTask
             });
 
             job.Status = jobCancellationRequested ? "Cancelled" : ct.IsCancellationRequested ? "Failed" : "Completed";
-            // Jikan's paginated API does not provide a total before the fetch starts.
+            // Catalogue pagination does not provide a total before the fetch starts.
             // Once a job completes, the number processed is its actual total.
             if (job.Status == "Completed" && job.TotalCount == 0)
                 job.TotalCount = job.ProcessedCount;

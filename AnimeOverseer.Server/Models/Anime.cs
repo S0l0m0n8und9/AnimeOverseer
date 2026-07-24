@@ -6,7 +6,7 @@ namespace AnimeOverseer.Server.Models;
 public class AnimeRelation
 {
     public string RelationType { get; set; } = string.Empty; // Prequel, Sequel, Side Story, etc.
-    public int MALId { get; set; }
+    public int AnimeId { get; set; }
     public string Name { get; set; } = string.Empty;
 }
 
