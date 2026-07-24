@@ -98,6 +98,21 @@
                     }
                 </div>
             }
+
+            @if (_syncedAnimes.Count > 0)
+            {
+                <details style="margin-top:1.25rem;border:1px solid #333;border-radius:5px;background:#1a1a1a">
+                    <summary style="padding:.65rem .8rem;cursor:pointer;color:#ddd;font-size:.9em">
+                        Synced anime (@_syncedAnimes.Count.ToString("N0"))
+                    </summary>
+                    <div style="border-top:1px solid #333;padding:.4rem .8rem;max-height:340px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.15rem 1rem">
+                        @foreach (var anime in _syncedAnimes)
+                        {
+                            <a href="/anime/@anime.Id" style="color:#90caf9;text-decoration:none;font-size:.88em;padding:.25rem 0">@anime.Title</a>
+                        }
+                    </div>
+                </details>
+            }
         </div>
 
         <hr style="border-color:#333;margin-bottom:1.25rem" />
@@ -145,6 +160,7 @@
 
     private SyncJob? _job;
     private List<SyncJobLog> _logs = new();
+    private List<Anime> _syncedAnimes = new();
     private bool _notFound = false;
     private bool _continuing = false;
     private bool _cancelling = false;
@@ -220,10 +236,11 @@
         var job = await SyncJobService.GetByIdAsync(Id);
         if (job == null) { _notFound = true; return; }
         var logs = await SyncJobService.GetLogsAsync(Id);
-        // Assign both fields without any await between them so no render fires
-        // between the two assignments and sees a torn (_job=new, _logs=old) state.
+        var syncedAnimes = await SyncJobService.GetSyncedAnimesAsync(job);
+        // Assign all fields without an await between them so no render sees mixed refresh data.
         _job = job;
         _logs = logs;
+        _syncedAnimes = syncedAnimes;
     }
 
     private static string FormatDateTime(DateTime dt)

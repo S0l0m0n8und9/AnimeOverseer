@@ -292,6 +292,9 @@ namespace AnimeOverseer.Server.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SyncedAnimeIds")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("TotalCount")
                         .HasColumnType("INTEGER");
 

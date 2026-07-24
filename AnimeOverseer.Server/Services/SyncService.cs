@@ -10,6 +10,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
         var (years, seasons) = ParseJikanParams(job.Parameters);
+        var syncedIds = GetSyncedIds(job);
         // TotalCount is 0 because total anime across all pages is unknown upfront.
         job.TotalCount = 0;
         Log(job, $"AniList catalogue sync started — {seasons.Length} season(s) × {years.Length} year(s)");
@@ -37,7 +38,8 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             // preventing ChangeTracker conflicts with this service's db instance.
             using var cacheScope = scopeFactory.CreateScope();
             var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
-            await cache.FetchAndCacheSeasonsAsync(year, seasons, OnPageFetched, ct);
+            syncedIds.UnionWith(await cache.FetchAndCacheSeasonsAsync(year, seasons, OnPageFetched, ct));
+            job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
 
             if (ct.IsCancellationRequested) break;
 
@@ -94,6 +96,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
     public async Task RunAniListSyncAsync(SyncJob job, CancellationToken ct)
     {
+        var syncedIds = GetSyncedIds(job);
         int skipCount = ParseSkipCount(job.Parameters);
         var animes = await db.Animes
             .Where(a => a.MALId != null && a.MALId > 0)
@@ -114,7 +117,11 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             try
             {
                 var data = await aniList.GetByMalIdAsync(anime.MALId!.Value);
-                if (data != null) EnrichFields(anime, data);
+                if (data != null)
+                {
+                    EnrichFields(anime, data);
+                    syncedIds.Add(anime.Id);
+                }
             }
             catch { errors++; }
 
@@ -124,11 +131,15 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
 
             if (job.ProcessedCount % 20 == 0)
+            {
+                job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
                 await db.SaveChangesAsync(ct);
+            }
 
             await Task.Delay(700, ct); // ~85 req/min, under AniList rate limit
         }
 
+        job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
         await db.SaveChangesAsync(ct);
 
         var summary = errors > 0
@@ -140,6 +151,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
     public async Task RunKitsuSyncAsync(SyncJob job, CancellationToken ct)
     {
+        var syncedIds = GetSyncedIds(job);
         int skipCount = ParseSkipCount(job.Parameters);
         var animes = await db.Animes
             .Where(a => (a.KitsuId == null || a.KitsuId == 0) && a.Title != null)
@@ -160,7 +172,11 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             try
             {
                 var data = await kitsu.GetByTitleAsync(anime.Title);
-                if (data != null) EnrichFields(anime, data);
+                if (data != null)
+                {
+                    EnrichFields(anime, data);
+                    syncedIds.Add(anime.Id);
+                }
             }
             catch { errors++; }
 
@@ -170,11 +186,15 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
 
             if (job.ProcessedCount % 50 == 0)
+            {
+                job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
                 await db.SaveChangesAsync(ct);
+            }
 
             await Task.Delay(200, ct);
         }
 
+        job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
         await db.SaveChangesAsync(ct);
 
         var summary = errors > 0
@@ -194,6 +214,13 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             Level = level,
             Message = message
         });
+    }
+
+    private static HashSet<int> GetSyncedIds(SyncJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.SyncedAnimeIds)) return [];
+        try { return JsonSerializer.Deserialize<HashSet<int>>(job.SyncedAnimeIds) ?? []; }
+        catch (JsonException) { return []; }
     }
 
     private static void EnrichFields(Anime target, Anime source)

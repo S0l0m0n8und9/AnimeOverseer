@@ -81,4 +81,25 @@ public class SyncJobService(AnimeDbContext db)
             .OrderBy(l => l.Timestamp)
             .ThenBy(l => l.Id)
             .ToListAsync();
+
+    public async Task<List<Anime>> GetSyncedAnimesAsync(SyncJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.SyncedAnimeIds)) return [];
+
+        List<int>? ids;
+        try { ids = JsonSerializer.Deserialize<List<int>>(job.SyncedAnimeIds); }
+        catch (JsonException) { return []; }
+        if (ids is not { Count: > 0 }) return [];
+
+        var order = ids.Select((id, index) => new { id, index })
+            .GroupBy(x => x.id)
+            .ToDictionary(group => group.Key, group => group.First().index);
+        var animes = await db.Animes.AsNoTracking()
+            .Where(a => ids.Contains(a.Id))
+            .ToListAsync();
+
+        // Dictionary lookups are not translatable to SQL, so preserve the job's
+        // recorded sync order only after EF has fetched the matching rows.
+        return animes.OrderBy(a => order[a.Id]).ToList();
+    }
 }

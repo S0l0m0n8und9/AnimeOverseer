@@ -29,4 +29,6 @@ public class SyncJob
     public bool CancellationRequested { get; set; }
     public string? Message { get; set; }
     public string? Parameters { get; set; }
+    // JSON array of this application's Anime.Id values successfully handled by this job.
+    public string? SyncedAnimeIds { get; set; }
 }

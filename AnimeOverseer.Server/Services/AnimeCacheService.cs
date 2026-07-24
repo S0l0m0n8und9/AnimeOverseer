@@ -46,16 +46,18 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, MyA
         return await Query().FirstOrDefaultAsync(a => a.Id == id);
     }
 
-    public async Task FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+    public async Task<List<int>> FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
     {
+        var syncedIds = new List<int>();
         foreach (var season in seasons)
         {
             List<Anime> remote;
             try { remote = await aniList.GetSeasonAnimesAsync(year, season, onPageFetched, ct); }
             catch when (myAnimeList.IsConfigured) { remote = await myAnimeList.GetSeasonAsync(year, season, ct); }
             var seasonRow = await GetOrCreateSeasonAsync(season, year, ct);
-            await UpsertAsync(remote, seasonRow.Id, ct);
+            syncedIds.AddRange(await UpsertAsync(remote, seasonRow.Id, ct));
         }
+        return syncedIds.Distinct().ToList();
     }
 
     public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null)
@@ -103,7 +105,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, MyA
     public Task<List<Theme>> GetAllThemesAsync() => db.Themes.OrderBy(x => x.Name).ToListAsync();
     public Task<List<Demographic>> GetAllDemographicsAsync() => db.Demographics.OrderBy(x => x.Name).ToListAsync();
 
-    private async Task UpsertAsync(List<Anime> incoming, int? fixedSeasonId, CancellationToken ct = default)
+    private async Task<List<int>> UpsertAsync(List<Anime> incoming, int? fixedSeasonId, CancellationToken ct = default)
     {
         var aniListIds = incoming.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).Distinct().ToList();
         var malIds = incoming.Where(a => a.MALId is > 0).Select(a => a.MALId!.Value).Distinct().ToList();
@@ -130,6 +132,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, MyA
             target.CachedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync(ct);
+        var syncedIds = sources.Select(source => existing[Key(source)].Id).Distinct().ToList();
         foreach (var source in sources)
         {
             var target = existing[Key(source)];
@@ -137,6 +140,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, MyA
             await ReplaceTagsAsync(target, source, ct);
         }
         await db.SaveChangesAsync(ct);
+        return syncedIds;
     }
 
     private static string Key(Anime anime) => anime.AniListId is > 0 ? $"a:{anime.AniListId}" : $"m:{anime.MALId}";
