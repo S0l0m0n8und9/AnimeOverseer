@@ -5,19 +5,26 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.BackgroundServices;
 
-public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<SyncJobRunnerService> logger) : BackgroundService
+public class SyncJobRunnerService(
+    IServiceScopeFactory scopeFactory,
+    SyncJobTrigger syncJobTrigger,
+    ILogger<SyncJobRunnerService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await ResetStaleJobsAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
-        { 
-            var millisecondsDelay = 3 * 60 * 1000;
-            await Task.Delay(millisecondsDelay, stoppingToken);
+        {
             try
             {
-                await ProcessNextJobAsync(stoppingToken);
+                // Jobs always run serially. Drain the queue before waiting so a
+                // manual trigger starts all currently queued jobs without delay.
+                while (await ProcessNextJobAsync(stoppingToken)) { }
+
+                // Keep the timed wake-up as a safeguard for jobs inserted outside
+                // SyncJobService, while allowing queue requests to wake us at once.
+                await syncJobTrigger.WaitAsync(TimeSpan.FromMinutes(3), stoppingToken);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex) { logger.LogError(ex, "Sync job runner error"); }
@@ -45,7 +52,7 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
             await db.SaveChangesAsync(ct);
     }
 
-    private async Task ProcessNextJobAsync(CancellationToken ct)
+    private async Task<bool> ProcessNextJobAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AnimeDbContext>();
@@ -55,7 +62,7 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
             .OrderBy(j => j.QueuedAt)
             .FirstOrDefaultAsync(ct);
 
-        if (job == null) return;
+        if (job == null) return false;
 
         job.Status = "Running";
         job.StartedAt = DateTime.UtcNow;
@@ -123,6 +130,7 @@ public class SyncJobRunnerService(IServiceScopeFactory scopeFactory, ILogger<Syn
         }
 
         logger.LogInformation("Sync job {Id} ({Type}) finished with status {Status}", job.Id, job.JobType, job.Status);
+        return true;
     }
 
     private async Task MonitorCancellationAsync(int jobId, CancellationTokenSource jobCts, CancellationToken ct, Action onCancellationRequested)

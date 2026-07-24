@@ -36,6 +36,7 @@ builder.Services.AddScoped<StorageUsageService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<MediaRequestService>();
 builder.Services.AddSingleton<MediaLibraryService>();
+builder.Services.AddSingleton<SyncJobTrigger>();
 builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<DailyAiringRefreshService>();

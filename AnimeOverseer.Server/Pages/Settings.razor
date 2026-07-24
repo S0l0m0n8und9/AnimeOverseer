@@ -2,9 +2,11 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
+@using AnimeOverseer.Server.BackgroundServices
 @using System.Text.Json
 @inject SettingsService SettingsService
 @inject SyncJobService SyncJobService
+@inject SyncJobTrigger SyncJobTrigger
 @inject StorageUsageService StorageUsageService
 @inject IHttpClientFactory HttpClientFactory
 @implements IDisposable
@@ -139,6 +141,10 @@
     {
     <!-- ══ Job History ═══════════════════════════════════════════════════ -->
     <h2>Job History</h2>
+    <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem;margin-bottom:.75rem"
+            @onclick="RunQueuedJobsNowAsync" disabled="@(!HasQueuedJobs)">
+        Run queued jobs now
+    </button>
 
     @if (_jobs.Count == 0)
     {
@@ -449,6 +455,8 @@
 
     private int PageCount => Math.Max(1, (int)Math.Ceiling((double)_totalJobs / _jobsPerPage));
 
+    private bool HasQueuedJobs => _jobs.Any(j => j.Status == "Queued");
+
     private async Task GoToPageAsync(int page)
     {
         _jobsPage = Math.Clamp(page, 1, PageCount);
@@ -520,6 +528,13 @@
             StartPolling();
         }
         finally { _triggering = false; }
+    }
+
+    private async Task RunQueuedJobsNowAsync()
+    {
+        SyncJobTrigger.Signal();
+        await LoadJobsAsync();
+        StartPolling();
     }
 
     private IEnumerable<int> JikanYearList()

@@ -12,11 +12,13 @@ public class NightlySyncService : BackgroundService
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(5); // Delay startup to let other services initialize
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly SyncJobTrigger _syncJobTrigger;
     private readonly ILogger<NightlySyncService> _logger;
 
-    public NightlySyncService(IServiceScopeFactory scopeFactory, ILogger<NightlySyncService> logger)
+    public NightlySyncService(IServiceScopeFactory scopeFactory, SyncJobTrigger syncJobTrigger, ILogger<NightlySyncService> logger)
     {
         _scopeFactory = scopeFactory;
+        _syncJobTrigger = syncJobTrigger;
         _logger = logger;
     }
 
@@ -62,6 +64,7 @@ public class NightlySyncService : BackgroundService
 
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync(stoppingToken);
+        _syncJobTrigger.Signal();
 
         _logger.LogInformation("Nightly sync: queued AniList sync job {JobId}", job.Id);
 

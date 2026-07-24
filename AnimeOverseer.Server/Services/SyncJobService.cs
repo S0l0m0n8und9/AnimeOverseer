@@ -1,11 +1,12 @@
 using System.Text.Json;
 using AnimeOverseer.Server.Data;
+using AnimeOverseer.Server.BackgroundServices;
 using AnimeOverseer.Server.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.Services;
 
-public class SyncJobService(AnimeDbContext db)
+public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
 {
     public async Task<SyncJob?> QueueAsync(string jobType, string? parameters = null)
     {
@@ -16,6 +17,7 @@ public class SyncJobService(AnimeDbContext db)
         var job = new SyncJob { JobType = jobType, QueuedAt = DateTime.UtcNow, Parameters = parameters };
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync();
+        syncJobTrigger.Signal();
         return job;
     }
 
@@ -37,6 +39,7 @@ public class SyncJobService(AnimeDbContext db)
         var job = new SyncJob { JobType = failed.JobType, QueuedAt = DateTime.UtcNow, Parameters = parameters };
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync();
+        syncJobTrigger.Signal();
         return job;
     }
 
