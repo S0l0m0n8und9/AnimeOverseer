@@ -12,11 +12,12 @@ namespace AnimeOverseer.Server.Tests.TestInfrastructure;
 public abstract class SqliteIntegrationTestBase : IDisposable
 {
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"animeoverseer-tests-{Guid.NewGuid():N}.db");
+    protected string ConnectionString => $"Data Source={_databasePath};Pooling=False";
 
     protected AnimeDbContext CreateDb()
     {
         var db = new AnimeDbContext(new DbContextOptionsBuilder<AnimeDbContext>()
-            .UseSqlite($"Data Source={_databasePath};Pooling=False").Options);
+            .UseSqlite(ConnectionString).Options);
         db.Database.EnsureCreated();
         return db;
     }
@@ -29,9 +30,9 @@ public abstract class SqliteIntegrationTestBase : IDisposable
         return season;
     }
 
-    protected static AnimeCacheService CreateCache(AnimeDbContext db)
+    protected static AnimeCacheService CreateCache(AnimeDbContext db, HttpMessageHandler? handler = null)
     {
-        var client = new HttpClient(new FailingHandler());
+        var client = new HttpClient(handler ?? new FailingHandler());
         var aniList = new AniListApiService(client, NullLogger<AniListApiService>.Instance);
         var imageCache = new ImageCacheService(new TestHttpClientFactory(client), new TestWebHostEnvironment());
         return new AnimeCacheService(db, aniList, imageCache);

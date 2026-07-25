@@ -2,7 +2,10 @@ using AnimeOverseer.Server.BackgroundServices;
 using AnimeOverseer.Server.Models;
 using AnimeOverseer.Server.Services;
 using AnimeOverseer.Server.Tests.TestInfrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AnimeOverseer.Server.Tests;
@@ -39,5 +42,109 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         }, ct: cancellation.Token));
         Assert.Equal(0, calls);
         Assert.Equal(0, await db.Animes.CountAsync());
+    }
+
+    [Fact]
+    public async Task Runner_recovers_stale_running_jobs_on_startup()
+    {
+        await using (var db = CreateDb())
+        {
+            db.SyncJobs.AddRange(
+                new SyncJob { JobType = "AniList", Status = "Running" },
+                new SyncJob { JobType = "AniList", Status = "Running", CancellationRequested = true });
+            await db.SaveChangesAsync();
+        }
+
+        await using var provider = CreateRunnerProvider();
+        var runner = provider.GetRequiredService<SyncJobRunnerService>();
+        await runner.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(async () =>
+        {
+            await using var check = CreateDb();
+            return await check.SyncJobs.AllAsync(job => job.FinishedAt != null);
+        });
+        await runner.StopAsync(CancellationToken.None);
+
+        await using var saved = CreateDb();
+        var jobs = await saved.SyncJobs.OrderBy(job => job.Id).ToListAsync();
+        Assert.Equal("Failed", jobs[0].Status);
+        Assert.Equal("Cancelled", jobs[1].Status);
+    }
+
+    [Fact]
+    public async Task Runner_observes_cancellation_request_and_finishes_job_as_cancelled()
+    {
+        await using (var db = CreateDb())
+        {
+            db.SyncJobs.Add(new SyncJob { JobType = "AniList", Parameters = "{\"years\":[2026],\"seasons\":[\"spring\"]}" });
+            await db.SaveChangesAsync();
+        }
+
+        var blockingHandler = new BlockingHandler();
+        await using var provider = CreateRunnerProvider(blockingHandler);
+        var runner = provider.GetRequiredService<SyncJobRunnerService>();
+        await runner.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(async () =>
+        {
+            await using var check = CreateDb();
+            return await check.SyncJobs.SingleAsync().ContinueWith(task => task.Result.Status == "Running");
+        });
+
+        using (var scope = provider.CreateScope())
+            Assert.True(await scope.ServiceProvider.GetRequiredService<SyncJobService>().CancelAsync(1));
+
+        await WaitUntilAsync(async () =>
+        {
+            await using var check = CreateDb();
+            return (await check.SyncJobs.SingleAsync()).Status == "Cancelled";
+        }, TimeSpan.FromSeconds(5));
+        await runner.StopAsync(CancellationToken.None);
+
+        await using var saved = CreateDb();
+        var job = await saved.SyncJobs.SingleAsync();
+        Assert.Equal("Cancelled", job.Status);
+        Assert.Equal("Cancelled", job.Message);
+        Assert.NotNull(job.FinishedAt);
+    }
+
+    private ServiceProvider CreateRunnerProvider(HttpMessageHandler? cacheHandler = null)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new AnimeOverseer.Server.Data.AnimeDbContext(
+            new DbContextOptionsBuilder<AnimeOverseer.Server.Data.AnimeDbContext>().UseSqlite(ConnectionString).Options));
+        services.AddSingleton<SyncJobTrigger>();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddScoped<HttpClient>();
+        services.AddScoped<SettingsService>();
+        services.AddScoped<AniListApiService>(service => new AniListApiService(new HttpClient(), NullLogger<AniListApiService>.Instance));
+        services.AddScoped<MyAnimeListApiService>();
+        services.AddScoped<AnimeScheduleApiService>();
+        services.AddScoped<KitsuApiService>(service => new KitsuApiService(new HttpClient()));
+        services.AddScoped<AnimeCacheService>(service => CreateCache(service.GetRequiredService<AnimeOverseer.Server.Data.AnimeDbContext>(), cacheHandler));
+        services.AddScoped<SyncService>();
+        services.AddScoped<SyncJobService>();
+        services.AddSingleton<SyncJobRunnerService>();
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition()) return;
+            await Task.Delay(25);
+        }
+        Assert.Fail("Timed out waiting for background job state.");
+    }
+
+    private sealed class BlockingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The request should have been cancelled.");
+        }
     }
 }
