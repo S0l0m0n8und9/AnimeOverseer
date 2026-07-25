@@ -3,6 +3,7 @@
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
 @using AnimeOverseer.Server.BackgroundServices
+@using AnimeOverseer.Server.Pages
 @using System.Text.Json
 @inject SettingsService SettingsService
 @inject SyncJobService SyncJobService
@@ -40,7 +41,16 @@
            aria-selected="@(_activeTab == SettingsTab.Storage)">
             Storage
         </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Review)" href="@TabUrl(SettingsTab.Review)"
+           aria-selected="@(_activeTab == SettingsTab.Review)">
+            Review matches
+        </a>
     </div>
+
+    @if (_activeTab == SettingsTab.Review)
+    {
+        <AnimeReview />
+    }
 
     @if (_activeTab == SettingsTab.Sources)
     {
@@ -473,7 +483,7 @@
 </div>
 
 @code {
-    private enum SettingsTab { Sources, Servers, History, Storage }
+    private enum SettingsTab { Sources, Servers, History, Storage, Review }
 
     [Parameter, SupplyParameterFromQuery(Name = "tab")]
     public string? Tab { get; set; }
@@ -525,6 +535,7 @@
         SettingsTab.Servers => "/settings?tab=servers",
         SettingsTab.History => "/settings?tab=history",
         SettingsTab.Storage => "/settings?tab=storage",
+        SettingsTab.Review => "/settings?tab=review",
         _ => "/settings"
     };
 
@@ -537,6 +548,7 @@
             "servers" => SettingsTab.Servers,
             "history" => SettingsTab.History,
             "storage" => SettingsTab.Storage,
+            "review" => SettingsTab.Review,
             _ => SettingsTab.Sources
         };
     }

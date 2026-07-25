@@ -3,6 +3,7 @@ using AnimeOverseer.Server.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace AnimeOverseer.Server.Services;
 
@@ -136,6 +137,50 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
     public Task<List<Theme>> GetAllThemesAsync() => db.Themes.OrderBy(x => x.Name).ToListAsync();
     public Task<List<Demographic>> GetAllDemographicsAsync() => db.Demographics.OrderBy(x => x.Name).ToListAsync();
 
+    /// <summary>Applies a human decision for a staged title/alias match.</summary>
+    public async Task<bool> ResolvePendingReviewAsync(int reviewId, string decision, int? candidateAnimeId = null, CancellationToken ct = default)
+    {
+        var review = await db.PendingAnimeReviews.FirstOrDefaultAsync(item => item.Id == reviewId && item.Status == "Pending", ct);
+        if (review is null) return false;
+        if (decision == "Defer")
+        {
+            review.Status = "Deferred";
+            review.ResolvedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+
+        var snapshot = JsonSerializer.Deserialize<AnimeImportSnapshot>(review.PayloadJson);
+        if (snapshot is null) return false;
+        var source = FromSnapshot(snapshot);
+        Anime target;
+        if (decision == "Create")
+        {
+            target = new Anime { SeasonId = review.SeasonId };
+            db.Animes.Add(target);
+        }
+        else if (decision == "Merge" && candidateAnimeId is > 0)
+        {
+            var candidateIds = JsonSerializer.Deserialize<List<int>>(review.CandidateAnimeIdsJson) ?? [];
+            if (!candidateIds.Contains(candidateAnimeId.Value)) return false;
+            var existing = await db.Animes.Include(item => item.TitleAliases).FirstOrDefaultAsync(item => item.Id == candidateAnimeId.Value, ct);
+            if (existing is null) return false;
+            target = existing;
+        }
+        else return false;
+
+        Copy(target, source);
+        await StoreTitleAliasesAsync(target, source, ct);
+        await db.SaveChangesAsync(ct);
+        if (!string.IsNullOrWhiteSpace(source.ImageUrl)) target.LocalImagePath = await imageCache.CacheImageAsync(source.ImageUrl, target.Id);
+        await StoreImagesAsync(target, source, ct);
+        await ReplaceTagsAsync(target, source, ct);
+        review.Status = decision == "Create" ? "Created" : "Merged";
+        review.ResolvedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private async Task<List<int>> UpsertAsync(List<Anime> incoming, int? fixedSeasonId, CancellationToken ct = default)
     {
         var aniListIds = incoming.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).Distinct().ToList();
@@ -158,7 +203,15 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             if (!existing.TryGetValue(Key(source), out var target) &&
                 !(source.MALId is > 0 && existing.TryGetValue($"m:{source.MALId}", out target)))
             {
-                target = ResolveByName(existingByName, existingRows, source);
+                var candidates = FindNameCandidates(existingByName, existingRows, source);
+                if (candidates.Count > 0)
+                {
+                    // A title is search evidence, not an identity.  This avoids a
+                    // franchise synonym (for example a season-one title attached to
+                    // season four) silently overwriting a different catalogue row.
+                    await QueueForReviewAsync(source, fixedSeasonId, candidates, ct);
+                    continue;
+                }
                 if (target is null)
                 {
                     target = new Anime { AniListId = source.AniListId, SeasonId = fixedSeasonId ?? await UnknownSeasonIdAsync(ct) };
@@ -174,8 +227,9 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             target.CachedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync(ct);
-        var syncedIds = sources.Select(source => existing[Key(source)].Id).Distinct().ToList();
-        foreach (var source in sources)
+        var persistedSources = sources.Where(source => existing.ContainsKey(Key(source))).ToList();
+        var syncedIds = persistedSources.Select(source => existing[Key(source)].Id).Distinct().ToList();
+        foreach (var source in persistedSources)
         {
             var target = existing[Key(source)];
             if (!string.IsNullOrWhiteSpace(source.ImageUrl)) target.LocalImagePath = await imageCache.CacheImageAsync(source.ImageUrl, target.Id);
@@ -190,16 +244,14 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
 
     private static string Key(Anime anime) => anime.AniListId is > 0 ? $"a:{anime.AniListId}" : $"m:{anime.MALId}";
 
-    private static Anime? ResolveByName(Dictionary<string, HashSet<Anime>> index, IReadOnlyCollection<Anime> existingRows, Anime source)
+    private static List<Anime> FindNameCandidates(Dictionary<string, HashSet<Anime>> index, IReadOnlyCollection<Anime> existingRows, Anime source)
     {
         var candidates = Names(source)
             .Where(index.ContainsKey)
             .SelectMany(name => index[name])
             .Distinct()
             .ToList();
-        // Do not guess when a generic or reused title identifies more than one row.
-        if (candidates.Count == 1) return candidates[0];
-        if (candidates.Count > 1) return null;
+        if (candidates.Count > 0) return candidates;
 
         // Providers often vary only by articles and season notation, e.g.
         // "The Saga of Tanya the Evil II" vs "Saga of Tanya the Evil Season 2".
@@ -209,10 +261,63 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             .Where(x => x.Score >= 0.9)
             .OrderByDescending(x => x.Score)
             .ToList();
-        return ranked.Count > 0 && (ranked.Count == 1 || ranked[0].Score > ranked[1].Score)
-            ? ranked[0].Anime
-            : null;
+        return ranked.Select(x => x.Anime).ToList();
     }
+
+    private async Task QueueForReviewAsync(Anime source, int? fixedSeasonId, IReadOnlyCollection<Anime> candidates, CancellationToken ct)
+    {
+        var isDuplicate = await db.PendingAnimeReviews.AnyAsync(review =>
+            review.Status == "Pending" &&
+            ((source.AniListId.HasValue && source.AniListId.Value > 0 && review.SourceAniListId == source.AniListId) ||
+             (source.MALId.HasValue && source.MALId.Value > 0 && review.SourceMalId == source.MALId)), ct);
+        if (isDuplicate) return;
+
+        var reason = candidates.Any(candidate => HasConflictingIds(source, candidate))
+            ? "Provider IDs conflict with a title/alias candidate"
+            : candidates.Count > 1
+                ? "More than one title/alias candidate was found"
+                : "Title or alias match needs confirmation";
+        db.PendingAnimeReviews.Add(new PendingAnimeReview
+        {
+            SeasonId = fixedSeasonId ?? await UnknownSeasonIdAsync(ct),
+            SourceName = "Catalogue import",
+            SourceAniListId = source.AniListId,
+            SourceMalId = source.MALId,
+            Reason = reason,
+            PayloadJson = JsonSerializer.Serialize(ToSnapshot(source)),
+            CandidateAnimeIdsJson = JsonSerializer.Serialize(candidates.Select(candidate => candidate.Id).Distinct()),
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static bool HasConflictingIds(Anime source, Anime candidate)
+        => (source.AniListId is > 0 && candidate.AniListId is > 0 && source.AniListId != candidate.AniListId) ||
+           (source.MALId is > 0 && candidate.MALId is > 0 && source.MALId != candidate.MALId);
+
+    private static AnimeImportSnapshot ToSnapshot(Anime source) => new()
+    {
+        AniListId = source.AniListId, MALId = source.MALId, KitsuId = source.KitsuId,
+        Title = source.Title, HasEnglishTitle = source.HasEnglishTitle, OriginalTitle = source.OriginalTitle,
+        AlternativeTitles = source.AlternativeTitles, Synopsis = source.Synopsis, ImageUrl = source.ImageUrl,
+        Type = source.Type, Episodes = source.Episodes, Duration = source.Duration, Rating = source.Rating,
+        Status = source.Status, StartDate = source.StartDate, EndDate = source.EndDate,
+        Genres = source.AnimeGenres.Select(x => x.Genre.Name).ToList(),
+        Themes = source.AnimeThemes.Select(x => x.Theme.Name).ToList(),
+        Demographics = source.AnimeDemographics.Select(x => x.Demographic.Name).ToList(),
+        SourceImages = source.SourceImages
+    };
+
+    private static Anime FromSnapshot(AnimeImportSnapshot source) => new()
+    {
+        AniListId = source.AniListId, MALId = source.MALId, KitsuId = source.KitsuId,
+        Title = source.Title, HasEnglishTitle = source.HasEnglishTitle, OriginalTitle = source.OriginalTitle,
+        AlternativeTitles = source.AlternativeTitles, Synopsis = source.Synopsis, ImageUrl = source.ImageUrl,
+        Type = source.Type, Episodes = source.Episodes, Duration = source.Duration, Rating = source.Rating,
+        Status = source.Status, StartDate = source.StartDate, EndDate = source.EndDate, SourceImages = source.SourceImages,
+        AnimeGenres = source.Genres.Select(name => new AnimeGenre { Genre = new Genre { Name = name } }).ToList(),
+        AnimeThemes = source.Themes.Select(name => new AnimeTheme { Theme = new Theme { Name = name } }).ToList(),
+        AnimeDemographics = source.Demographics.Select(name => new AnimeDemographic { Demographic = new Demographic { Name = name } }).ToList()
+    };
 
     private static void AddNameCandidates(Dictionary<string, HashSet<Anime>> index, Anime source, Anime? target = null)
     {
@@ -285,7 +390,11 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             t.Title = s.Title;
             t.HasEnglishTitle = s.HasEnglishTitle;
         }
-        t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl; t.MALId=s.MALId; t.AniListId=s.AniListId; t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate;
+        t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl;
+        if (s.MALId is > 0 && (t.MALId is null or 0 || t.MALId == s.MALId)) t.MALId=s.MALId;
+        if (s.AniListId is > 0 && (t.AniListId is null or 0 || t.AniListId == s.AniListId)) t.AniListId=s.AniListId;
+        if (s.KitsuId is > 0 && (t.KitsuId is null or 0 || t.KitsuId == s.KitsuId)) t.KitsuId=s.KitsuId;
+        t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate;
     }
     private async Task StoreTitleAliasesAsync(Anime target, Anime source, CancellationToken ct)
     {

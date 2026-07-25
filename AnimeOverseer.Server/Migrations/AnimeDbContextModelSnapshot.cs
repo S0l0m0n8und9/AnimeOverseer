@@ -401,6 +401,29 @@ namespace AnimeOverseer.Server.Migrations
                     b.ToTable("Seasons");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.PendingAnimeReview", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CandidateAnimeIdsJson").IsRequired().HasColumnType("TEXT");
+                    b.Property<DateTime>("CreatedAt").HasColumnType("TEXT");
+                    b.Property<string>("PayloadJson").IsRequired().HasColumnType("TEXT");
+                    b.Property<string>("Reason").IsRequired().HasColumnType("TEXT");
+                    b.Property<DateTime?>("ResolvedAt").HasColumnType("TEXT");
+                    b.Property<int>("SeasonId").HasColumnType("INTEGER");
+                    b.Property<int?>("SourceAniListId").HasColumnType("INTEGER");
+                    b.Property<int?>("SourceMalId").HasColumnType("INTEGER");
+                    b.Property<string>("SourceName").IsRequired().HasColumnType("TEXT");
+                    b.Property<string>("Status").IsRequired().HasColumnType("TEXT");
+                    b.Property<int?>("SyncJobId").HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+                    b.HasIndex("Status", "CreatedAt");
+                    b.ToTable("PendingAnimeReviews");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.SyncJob", b =>
                 {
                     b.Property<int>("Id")

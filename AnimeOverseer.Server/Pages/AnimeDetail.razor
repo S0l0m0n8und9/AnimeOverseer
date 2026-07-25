@@ -7,6 +7,7 @@
 @inject NavigationManager NavManager
 @inject MediaRequestService MediaRequestService
 @inject MediaLibraryService MediaLibraryService
+@inject AnimeReviewService AnimeReviewService
 
 <PageTitle>@(anime?.Title ?? "Loading...") - AnimeOverseer</PageTitle>
 
@@ -98,11 +99,15 @@
                             <ul>
                                 @foreach (var alias in DisplayAliases)
                                 {
-                                    <li>@alias</li>
+                                    <li><span>@alias</span><button class="alias-use-button" @onclick="() => SetMainEnglishTitleAsync(alias)">Use as main English name</button></li>
                                 }
                             </ul>
                         </details>
                     }
+                    <div class="custom-title-editor">
+                        <input @bind="_customEnglishTitle" placeholder="Custom English name" aria-label="Custom English name" />
+                        <button @onclick="SetCustomEnglishTitleAsync" disabled="@string.IsNullOrWhiteSpace(_customEnglishTitle)">Use as main English name</button>
+                    </div>
 
                     <div class="meta-badges">
                         @if (!string.IsNullOrEmpty(anime.Type))
@@ -340,6 +345,7 @@
     private bool _isSettingPoster;
     private string? _posterMessage;
     private bool _isPreviewExpanded;
+    private string _customEnglishTitle = string.Empty;
 
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
 
@@ -354,14 +360,30 @@
         .ThenBy(image => image.Source)
         .ToList() ?? [];
 
-    private List<string> DisplayAliases => anime?.TitleAliases
-        .Select(alias => alias.Title.Trim())
+    private List<string> DisplayAliases => anime is null ? [] : new[] { anime.OriginalTitle }
+        .Concat(anime.TitleAliases.Select(alias => alias.Title))
+        .Select(title => title?.Trim() ?? string.Empty)
         .Where(title => !string.IsNullOrWhiteSpace(title)
-            && !string.Equals(title, anime.Title, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(title, anime.OriginalTitle, StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(title, anime.Title, StringComparison.OrdinalIgnoreCase))
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(title => title, StringComparer.OrdinalIgnoreCase)
         .ToList() ?? [];
+
+    private async Task SetMainEnglishTitleAsync(string title)
+    {
+        if (anime is null || !await AnimeReviewService.SetMainEnglishTitleAsync(anime.Id, title)) return;
+        anime = await AnimeDataSource.GetByIdAsync(anime.Id);
+    }
+
+    private async Task SetCustomEnglishTitleAsync()
+    {
+        if (anime is null || string.IsNullOrWhiteSpace(_customEnglishTitle)) return;
+        if (await AnimeReviewService.SetMainEnglishTitleAsync(anime.Id, _customEnglishTitle, allowCustom: true))
+        {
+            anime = await AnimeDataSource.GetByIdAsync(anime.Id);
+            _customEnglishTitle = string.Empty;
+        }
+    }
 
     private AnimeImage? CurrentImage => GalleryImages.FirstOrDefault(image => image.Id == _selectedImageId)
         ?? anime?.PreferredImage

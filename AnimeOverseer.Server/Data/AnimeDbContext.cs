@@ -13,6 +13,7 @@ public class AnimeDbContext : DbContext
     public DbSet<Anime> Animes { get; set; }
     public DbSet<AnimeImage> AnimeImages { get; set; }
     public DbSet<AnimeTitleAlias> AnimeTitleAliases { get; set; }
+    public DbSet<PendingAnimeReview> PendingAnimeReviews { get; set; }
     public DbSet<Genre> Genres { get; set; }
     public DbSet<AnimeGenre> AnimeGenres { get; set; }
     public DbSet<Theme> Themes { get; set; }
@@ -77,6 +78,9 @@ public class AnimeDbContext : DbContext
         modelBuilder.Entity<AnimeTitleAlias>()
             .HasIndex(alias => new { alias.AnimeId, alias.Title })
             .IsUnique();
+
+        modelBuilder.Entity<PendingAnimeReview>()
+            .HasIndex(review => new { review.Status, review.CreatedAt });
 
         modelBuilder.Entity<Genre>().HasIndex(g => g.Name).IsUnique();
         modelBuilder.Entity<Theme>().HasIndex(t => t.Name).IsUnique();

@@ -31,6 +31,7 @@ builder.Services.AddHttpClient<AnimeScheduleApiService>();
 // Retained only so legacy Kitsu enrichment jobs can finish; it is not a catalogue source.
 builder.Services.AddHttpClient<KitsuApiService>();
 builder.Services.AddScoped<AnimeCacheService>();
+builder.Services.AddScoped<AnimeReviewService>();
 builder.Services.AddScoped<IAnimeDataSource>(sp => sp.GetRequiredService<AnimeCacheService>());
 builder.Services.AddSingleton<ImageCacheService>();
 builder.Services.AddScoped<StorageUsageService>();

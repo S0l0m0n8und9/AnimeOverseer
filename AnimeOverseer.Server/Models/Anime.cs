@@ -122,6 +122,51 @@ public class AnimeTitleAlias
     public string Title { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// An import whose identity cannot be established safely.  The source record is
+/// retained as a compact JSON snapshot until someone chooses to merge or create it.
+/// </summary>
+public class PendingAnimeReview
+{
+    public int Id { get; set; }
+    public int? SyncJobId { get; set; }
+    public int SeasonId { get; set; }
+    public string SourceName { get; set; } = string.Empty;
+    public int? SourceAniListId { get; set; }
+    public int? SourceMalId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = string.Empty;
+    public string CandidateAnimeIdsJson { get; set; } = "[]";
+    public string Status { get; set; } = "Pending"; // Pending, Merged, Created, Deferred
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ResolvedAt { get; set; }
+}
+
+/// <summary>Serializable import fields needed to safely resume a reviewed decision.</summary>
+public class AnimeImportSnapshot
+{
+    public int? AniListId { get; set; }
+    public int? MALId { get; set; }
+    public int? KitsuId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public bool HasEnglishTitle { get; set; }
+    public string? OriginalTitle { get; set; }
+    public List<string> AlternativeTitles { get; set; } = [];
+    public string? Synopsis { get; set; }
+    public string? ImageUrl { get; set; }
+    public string? Type { get; set; }
+    public int? Episodes { get; set; }
+    public int? Duration { get; set; }
+    public decimal? Rating { get; set; }
+    public string? Status { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public List<string> Genres { get; set; } = [];
+    public List<string> Themes { get; set; } = [];
+    public List<string> Demographics { get; set; } = [];
+    public List<SourceImage> SourceImages { get; set; } = [];
+}
+
 public class SourceImage
 {
     public string Source { get; set; } = string.Empty;

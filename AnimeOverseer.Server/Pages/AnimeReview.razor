@@ -1,0 +1,91 @@
+@page "/anime-review"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using AnimeOverseer.Server.Services
+@using AnimeOverseer.Server.Models
+@using Microsoft.AspNetCore.Components.Web
+@inject AnimeReviewService ReviewService
+
+<PageTitle>Review catalogue matches - AnimeOverseer</PageTitle>
+
+<div class="review-page">
+    <div class="review-heading"><div><h1>Review catalogue matches</h1><p>Only title or alias matches are held here. Provider-ID matches continue automatically.</p></div><a href="/settings" class="review-back">← Settings</a></div>
+    @if (_items is null) { <p class="review-muted">Loading review queue…</p> }
+    else if (_items.Count == 0) { <div class="review-empty"><h3>Nothing needs review</h3><p>Future uncertain title matches will appear here instead of changing catalogue records.</p></div> }
+    else
+    {
+        <div class="review-toolbar"><strong>@_selected.Count selected</strong><span>Click to select · Shift-click selects a range · Ctrl/Cmd-click adds or removes records.</span><button @onclick='() => ResolveSelectedAsync("Create")' disabled="@(_selected.Count == 0 || _working)">Create as new</button><button @onclick='() => ResolveSelectedAsync("Merge")' disabled="@(!CanMergeSelection || _working)">Merge into shown match</button><button @onclick='() => ResolveSelectedAsync("Defer")' disabled="@(_selected.Count == 0 || _working)">Defer</button><button class="review-plain" @onclick="ClearSelection" disabled="@(_selected.Count == 0)">Clear</button></div>
+        @if (!string.IsNullOrEmpty(_notice)) { <p class="review-notice">@_notice</p> }
+        <div class="review-list">
+            @foreach (var item in _items)
+            {
+                var selected = _selected.Contains(item.Review.Id);
+                <div class="review-card @(selected ? "selected" : "")" @onclick="args => SelectItem(item.Review.Id, args)">
+                    <input class="review-select" type="checkbox" checked="@selected" aria-label="Select @item.Incoming.Title" @onclick="args => ToggleCheckbox(item.Review.Id, args)" @onclick:stopPropagation />
+                    <div class="review-incoming review-media">
+                        @if (!string.IsNullOrWhiteSpace(item.Incoming.ImageUrl)) { <img class="review-poster" src="@item.Incoming.ImageUrl" alt="@item.Incoming.Title poster" /> } else { <div class="review-poster review-poster-empty">🎬</div> }
+                        <div><span class="review-label">Incoming</span><h3>@item.Incoming.Title</h3><p>@FormatDate(item.Incoming.StartDate) · @SourceLinks(item.Incoming.MALId, item.Incoming.AniListId)</p>@if (IncomingNames(item.Incoming).Count > 0) { <details class="review-held-names"><summary>Names held (@IncomingNames(item.Incoming).Count)</summary>@foreach (var name in IncomingNames(item.Incoming)) { <div><span>@name</span><button @onclick='() => SetIncomingTitleAsync(item.Review.Id, name)' @onclick:stopPropagation>Use as English name</button></div> }</details> }<div class="review-custom-name"><input value="@IncomingCustomName(item.Review.Id)" @oninput="args => SetIncomingCustomName(item.Review.Id, args.Value?.ToString())" @onclick:stopPropagation placeholder="Custom English name" /><button @onclick='() => SetIncomingCustomTitleAsync(item.Review.Id)' @onclick:stopPropagation>Use custom</button></div></div>
+                    </div>
+                    <div class="review-arrow">→</div>
+                    <div class="review-candidate review-media"><span class="review-label">@CandidateLabel(item)</span>@if (item.Candidates.Count == 1) { var candidate = item.Candidates[0]; <a href="/anime/@candidate.Id" class="review-poster-link" title="Open @candidate.Title" @onclick:stopPropagation>@if (!string.IsNullOrWhiteSpace(candidate.DisplayImageUrl)) { <img class="review-poster" src="@(candidate.DisplayLocalImagePath ?? candidate.DisplayImageUrl)" alt="@candidate.Title poster" /> } else { <div class="review-poster review-poster-empty">🎬</div> }</a><div><h3><a href="/anime/@candidate.Id" @onclick:stopPropagation>@candidate.Title</a></h3><p>@FormatDate(candidate.StartDate) · @candidate.Season.Year @candidate.Season.Name · @SourceLinks(candidate.MALId, candidate.AniListId)</p><a class="review-record-link" href="/anime/@candidate.Id" @onclick:stopPropagation>Open current record →</a>@if (CandidateNames(candidate).Count > 0) { <details class="review-held-names"><summary>Names held (@CandidateNames(candidate).Count)</summary>@foreach (var name in CandidateNames(candidate)) { <div><span>@name</span><button @onclick='() => SetCandidateTitleAsync(candidate.Id, name)' @onclick:stopPropagation>Use as English name</button></div> }</details> }<div class="review-custom-name"><input value="@CandidateCustomName(candidate.Id)" @oninput="args => SetCandidateCustomName(candidate.Id, args.Value?.ToString())" @onclick:stopPropagation placeholder="Custom English name" /><button @onclick='() => SetCandidateCustomTitleAsync(candidate.Id)' @onclick:stopPropagation>Use custom</button></div></div> } else if (item.Candidates.Count > 1) { <p>@item.Candidates.Count possible matches — choose Create as new, or review individually after narrowing the catalogue.</p> } else { <p>The prior candidate no longer exists. Create this record as new.</p> }</div>
+                    <div class="review-reason">@item.Review.Reason</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<PendingAnimeReviewItem>? _items;
+    private readonly HashSet<int> _selected = [];
+    private int? _anchorId;
+    private readonly Dictionary<int, string> _incomingCustomNames = [];
+    private readonly Dictionary<int, string> _candidateCustomNames = [];
+    private bool _working;
+    private string? _notice;
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    private bool CanMergeSelection => _selected.Count > 0 && _items is not null && _items.Where(item => _selected.Contains(item.Review.Id)).All(item => item.Candidates.Count == 1);
+    private void SelectItem(int id, MouseEventArgs args)
+    {
+        if (_items is null) return;
+        if (args.ShiftKey && _anchorId is int anchor)
+        {
+            var start = _items.FindIndex(item => item.Review.Id == anchor); var end = _items.FindIndex(item => item.Review.Id == id);
+            if (start >= 0 && end >= 0) { if (!args.CtrlKey && !args.MetaKey) _selected.Clear(); foreach (var item in _items.Skip(Math.Min(start, end)).Take(Math.Abs(end - start) + 1)) _selected.Add(item.Review.Id); return; }
+        }
+        if (args.CtrlKey || args.MetaKey) { if (!_selected.Add(id)) _selected.Remove(id); } else { _selected.Clear(); _selected.Add(id); }
+        _anchorId = id;
+    }
+    private void ClearSelection() { _selected.Clear(); _anchorId = null; }
+    private void ToggleCheckbox(int id, MouseEventArgs args)
+    {
+        if (!_selected.Add(id)) _selected.Remove(id);
+        _anchorId = id;
+    }
+    private async Task ResolveSelectedAsync(string decision)
+    {
+        if (_items is null || _selected.Count == 0) return;
+        _working = true; var selectedItems = _items.Where(item => _selected.Contains(item.Review.Id)).ToList(); var count = await ReviewService.ResolveAsync(selectedItems, decision);
+        _notice = $"{count} record{(count == 1 ? "" : "s")} {decision.ToLowerInvariant()}d."; ClearSelection(); await ReloadAsync(); _working = false;
+    }
+    private async Task ReloadAsync() => _items = await ReviewService.GetPendingAsync();
+    private async Task SetIncomingTitleAsync(int reviewId, string title) { await ReviewService.SetIncomingMainEnglishTitleAsync(reviewId, title); await ReloadAsync(); }
+    private async Task SetCandidateTitleAsync(int animeId, string title) { await ReviewService.SetMainEnglishTitleAsync(animeId, title); await ReloadAsync(); }
+    private string IncomingCustomName(int reviewId) => _incomingCustomNames.GetValueOrDefault(reviewId, string.Empty);
+    private string CandidateCustomName(int animeId) => _candidateCustomNames.GetValueOrDefault(animeId, string.Empty);
+    private void SetIncomingCustomName(int reviewId, string? title) => _incomingCustomNames[reviewId] = title ?? string.Empty;
+    private void SetCandidateCustomName(int animeId, string? title) => _candidateCustomNames[animeId] = title ?? string.Empty;
+    private async Task SetIncomingCustomTitleAsync(int reviewId) { var title = IncomingCustomName(reviewId); if (string.IsNullOrWhiteSpace(title)) return; await ReviewService.SetIncomingMainEnglishTitleAsync(reviewId, title, allowCustom: true); await ReloadAsync(); }
+    private async Task SetCandidateCustomTitleAsync(int animeId) { var title = CandidateCustomName(animeId); if (string.IsNullOrWhiteSpace(title)) return; await ReviewService.SetMainEnglishTitleAsync(animeId, title, allowCustom: true); await ReloadAsync(); }
+    private static string FormatDate(DateTime? value) => value?.ToString("MMM yyyy") ?? "Unknown date";
+    private static List<string> IncomingNames(AnimeImportSnapshot item) => new[] { item.OriginalTitle }.Concat(item.AlternativeTitles).Where(name => !string.IsNullOrWhiteSpace(name) && !string.Equals(name, item.Title, StringComparison.OrdinalIgnoreCase)).Select(name => name!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    private static List<string> CandidateNames(Anime item) => new[] { item.OriginalTitle }.Concat(item.TitleAliases.Select(alias => alias.Title)).Where(name => !string.IsNullOrWhiteSpace(name) && !string.Equals(name, item.Title, StringComparison.OrdinalIgnoreCase)).Select(name => name!.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    private static RenderFragment SourceLinks(int? malId, int? aniListId) => builder =>
+    {
+        var sequence = 0;
+        if (malId is > 0) { builder.OpenElement(sequence++, "a"); builder.AddAttribute(sequence++, "href", $"https://myanimelist.net/anime/{malId}"); builder.AddAttribute(sequence++, "target", "_blank"); builder.AddContent(sequence++, $"MAL {malId}"); builder.CloseElement(); }
+        if (malId is > 0 && aniListId is > 0) builder.AddContent(sequence++, " · ");
+        if (aniListId is > 0) { builder.OpenElement(sequence++, "a"); builder.AddAttribute(sequence++, "href", $"https://anilist.co/anime/{aniListId}"); builder.AddAttribute(sequence++, "target", "_blank"); builder.AddContent(sequence++, $"AniList {aniListId}"); builder.CloseElement(); }
+        if (malId is not > 0 && aniListId is not > 0) builder.AddContent(sequence++, "No provider ID");
+    };
+    private static string CandidateLabel(PendingAnimeReviewItem item) => item.Candidates.Count switch { 0 => "No current candidate", 1 => "Possible match", _ => "Possible matches" };
+}
