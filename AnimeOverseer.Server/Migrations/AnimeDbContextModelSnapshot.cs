@@ -204,6 +204,81 @@ namespace AnimeOverseer.Server.Migrations
                     b.ToTable("AppSettings");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.IntegrationSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DayOfMonth")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EndAfterOccurrences")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("EndBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Interval")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastQueuedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MonthlyMode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("NthWeek")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("QueuedOccurrences")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecurrenceType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SeasonsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Weekday")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WeekdaysJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("YearCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("YearOffset")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("IntegrationSchedules");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.CachedAnimeRelation", b =>
                 {
                     b.Property<int>("Id")

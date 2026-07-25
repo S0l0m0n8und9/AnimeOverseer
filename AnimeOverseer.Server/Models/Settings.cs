@@ -32,3 +32,29 @@ public class SyncJob
     // JSON array of this application's Anime.Id values successfully handled by this job.
     public string? SyncedAnimeIds { get; set; }
 }
+
+/// <summary>Persisted catalogue source automation. One record represents one source's cadence.</summary>
+public class IntegrationSchedule
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "New schedule";
+    public string Source { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+    public DateTime StartAt { get; set; } = DateTime.UtcNow;
+    public string RecurrenceType { get; set; } = "Daily";
+    public int Interval { get; set; } = 1;
+    public string WeekdaysJson { get; set; } = "[]";
+    public string MonthlyMode { get; set; } = "DayOfMonth";
+    public int DayOfMonth { get; set; } = 1;
+    public int NthWeek { get; set; } = 1;
+    public int Weekday { get; set; }
+    public string EndType { get; set; } = "Never";
+    public int EndAfterOccurrences { get; set; } = 10;
+    public DateTime? EndBy { get; set; }
+    public int QueuedOccurrences { get; set; }
+    // Catalogue scope is relative to when the job runs, not when it is configured.
+    public int YearOffset { get; set; }
+    public int YearCount { get; set; } = 1;
+    public string SeasonsJson { get; set; } = "[\"winter\",\"spring\",\"summer\",\"fall\"]";
+    public DateTime? LastQueuedAt { get; set; }
+}

@@ -39,10 +39,11 @@ builder.Services.AddScoped<MediaRequestService>();
 builder.Services.AddSingleton<MediaLibraryService>();
 builder.Services.AddSingleton<SyncJobTrigger>();
 builder.Services.AddScoped<SyncJobService>();
+builder.Services.AddScoped<IntegrationScheduleService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddHostedService<DailyAiringRefreshService>();
 builder.Services.AddHostedService<SyncJobRunnerService>();
-builder.Services.AddHostedService<NightlySyncService>();
+builder.Services.AddHostedService<IntegrationScheduleServiceWorker>();
 
 var app = builder.Build();
 

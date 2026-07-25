@@ -6,6 +6,7 @@
 @using System.Text.Json
 @inject SettingsService SettingsService
 @inject SyncJobService SyncJobService
+@inject IntegrationScheduleService IntegrationScheduleService
 @inject SyncJobTrigger SyncJobTrigger
 @inject StorageUsageService StorageUsageService
 @inject IHttpClientFactory HttpClientFactory
@@ -45,6 +46,73 @@
     {
     <!-- ══ Data Sources ══════════════════════════════════════════════════ -->
     <h2>Data Sources</h2>
+
+    <section class="settings-card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap">
+            <div>
+                <h3 style="margin:0 0 .25rem">Automatic integrations</h3>
+                <p style="margin:0;color:#aaa;font-size:.9em">Create independent schedules for the same source. Each schedule has its own recurrence, range and catalogue work.</p>
+            </div>
+            <button class="btn btn-primary" @onclick="NewSchedule">New schedule</button>
+        </div>
+        @if (_editingSchedule is not null)
+        {
+            var schedule = _editingSchedule;
+            <div style="border-top:1px solid #333;margin-top:1rem;padding-top:1rem;display:grid;gap:.75rem">
+                <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
+                    <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
+                    <label>Source<select class="form-input" style="display:block" @bind="schedule.Source">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
+                    <label style="display:flex;gap:.35rem;align-items:center;height:38px"><input type="checkbox" @bind="schedule.Enabled" /> Enabled</label>
+                </div>
+                <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
+                    <label>Starts<input class="form-input" type="datetime-local" style="display:block" @bind-value="schedule.StartAt" @bind-value:format="yyyy-MM-ddTHH:mm" /></label>
+                    <label>Pattern<select class="form-input" style="display:block" @bind="schedule.RecurrenceType"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Yearly</option></select></label>
+                    <label>Every<input class="form-input" type="number" min="1" style="display:block;width:5rem" @bind="schedule.Interval" /></label>
+                    <span style="color:#aaa;margin-bottom:.55rem">@RecurrenceUnit(schedule.RecurrenceType, schedule.Interval)</span>
+                </div>
+                @if (schedule.RecurrenceType == "Weekly")
+                {
+                    <div><span style="color:#aaa">On </span>@foreach (var day in DaysOfWeek) { <label style="margin-left:.6rem"><input type="checkbox" checked="@ScheduleHasWeekday(schedule, day.Value)" @onchange="e => ToggleScheduleWeekday(schedule, day.Value, (bool)e.Value!)" /> @day.Name</label> }</div>
+                }
+                @if (schedule.RecurrenceType == "Monthly")
+                {
+                    <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap">
+                        <label>Monthly rule <select class="form-input" @bind="schedule.MonthlyMode"><option value="DayOfMonth">Day of month</option><option value="NthWeekday">Nth weekday</option></select></label>
+                        @if (schedule.MonthlyMode == "DayOfMonth") { <label>Day <input class="form-input" type="number" min="1" max="31" style="width:4.5rem" @bind="schedule.DayOfMonth" /></label> }
+                        else { <label>The <select class="form-input" @bind="schedule.NthWeek"><option value="1">first</option><option value="2">second</option><option value="3">third</option><option value="4">fourth</option><option value="5">last</option></select> <select class="form-input" @bind="schedule.Weekday">@foreach (var day in DaysOfWeek) { <option value="@day.Value">@day.Name</option> }</select></label> }
+                    </div>
+                }
+                <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Work to perform</strong>
+                    <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap;margin-top:.45rem">
+                        <label>Starting year<input class="form-input" type="number" style="display:block;width:6rem" @bind="schedule.YearOffset" /></label>
+                        <span style="color:#aaa;margin-bottom:.55rem">relative to the current year (@(DateTime.UtcNow.Year + schedule.YearOffset))</span>
+                        <label>Years<input class="form-input" type="number" min="1" style="display:block;width:5rem" @bind="schedule.YearCount" /></label>
+                        <span style="color:#aaa;margin-bottom:.55rem">(@YearScopeText(schedule))</span>
+                    </div>
+                    <div style="margin-top:.45rem"><span style="color:#aaa">Seasons: </span>@foreach (var season in SeasonOptions) { <label style="margin-left:.6rem"><input type="checkbox" checked="@ScheduleHasSeason(schedule, season)" @onchange="e => ToggleScheduleSeason(schedule, season, (bool)e.Value!)" /> @Capitalize(season)</label> } <button type="button" class="btn btn-secondary" style="font-size:.8em;padding:.15rem .4rem;margin-left:.6rem" @onclick="() => UseRemainingSeasons(schedule)">Use remaining current-year seasons</button></div>
+                </div>
+                <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Range of recurrence</strong>
+                    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.45rem;align-items:center">
+                        <label>Ends <select class="form-input" @bind="schedule.EndType"><option value="Never">No end date</option><option value="After">After occurrences</option><option value="By">On date</option></select></label>
+                        @if (schedule.EndType == "After") { <label>Occurrences <input class="form-input" type="number" min="1" style="width:5rem" @bind="schedule.EndAfterOccurrences" /></label> }
+                        @if (schedule.EndType == "By") { <label>End by <input class="form-input" type="date" @bind-value="schedule.EndBy" @bind-value:format="yyyy-MM-dd" /></label> }
+                    </div>
+                </div>
+                <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Next occurrences</strong><ol style="margin:.35rem 0 0;padding-left:1.4rem">@foreach (var occurrence in PreviewOccurrences(schedule)) { <li>@occurrence.ToLocalTime().ToString("ddd, d MMM yyyy h:mm tt")</li> }</ol></div>
+                <div style="display:flex;gap:.5rem"><button class="btn btn-primary" @onclick="SaveScheduleAsync">Save schedule</button><button class="btn btn-secondary" @onclick="CancelSchedule">Cancel</button></div>
+            </div>
+        }
+        <div style="display:grid;gap:.65rem;margin-top:.75rem">
+            @foreach (var schedule in _integrationSchedules)
+            {
+                <div style="border-top:1px solid #333;padding-top:.65rem">
+                    <div style="display:flex;gap:.8rem;align-items:center;flex-wrap:wrap"><strong>@schedule.Name</strong><span>@schedule.Source</span><span style="color:#aaa">@DescribeSchedule(schedule)</span><span style="color:#888">@(schedule.Enabled ? "Enabled" : "Disabled")</span><button class="btn btn-secondary" style="margin-left:auto" @onclick="() => EditSchedule(schedule)">Edit</button><button class="btn btn-secondary" @onclick="() => DeleteScheduleAsync(schedule.Id)">Remove</button><button class="btn btn-secondary" @onclick="() => StartInitialImportAsync(schedule.Source)" disabled="@(_initialImporting || !CanSync(schedule.Source))">Initial import / migration</button></div>
+                    <div style="font-size:.85em;color:#aaa;margin-top:.35rem">Next: @string.Join(" · ", PreviewOccurrences(schedule).Take(4).Select(d => d.ToLocalTime().ToString("d MMM h:mm tt")))</div>
+                </div>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(_integrationMessage)) { <p style="margin:.65rem 0 0;color:#aaa;font-size:.85em">@_integrationMessage</p> }
+    </section>
 
     <div class="settings-card-grid settings-card-grid--sources">
         @foreach (var src in new[]
@@ -408,11 +476,15 @@
 
     private List<SyncJob> _jobs = new();
     private List<SyncJob> _sourceJobs = new();
+    private List<IntegrationSchedule> _integrationSchedules = new();
+    private IntegrationSchedule? _editingSchedule;
     private int _totalJobs;
     private int _jobsPage = 1;
     private int _jobsPerPage = 10;
     private SettingsTab _activeTab = SettingsTab.Sources;
     private bool _triggering = false;
+    private bool _initialImporting;
+    private string? _integrationMessage;
     private bool _loadingStorage;
     private StorageUsage? _storageUsage;
     private CancellationTokenSource _cts = new();
@@ -466,7 +538,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync(), LoadStorageUsageAsync());
+        await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync(), LoadStorageUsageAsync(), LoadIntegrationSchedulesAsync());
         StateHasChanged();
         StartPolling();
     }
@@ -518,6 +590,9 @@
         // Keep enough recent jobs for the data-source cards independently of the current history page.
         _sourceJobs = await SyncJobService.GetRecentAsync(count: 30);
     }
+
+    private async Task LoadIntegrationSchedulesAsync()
+        => _integrationSchedules = await IntegrationScheduleService.GetAllAsync();
 
     private int PageCount => Math.Max(1, (int)Math.Ceiling((double)_totalJobs / _jobsPerPage));
 
@@ -596,6 +671,106 @@
             StartPolling();
         }
         finally { _triggering = false; }
+    }
+
+    private static readonly (int Value, string Name)[] DaysOfWeek =
+        [(0, "Sunday"), (1, "Monday"), (2, "Tuesday"), (3, "Wednesday"), (4, "Thursday"), (5, "Friday"), (6, "Saturday")];
+    private static readonly string[] SeasonOptions = ["winter", "spring", "summer", "fall"];
+
+    private void NewSchedule() => _editingSchedule = new IntegrationSchedule
+    {
+        Name = "New catalogue schedule",
+        Source = "AniList",
+        Enabled = true,
+        StartAt = DateTime.UtcNow.AddMinutes(5),
+        WeekdaysJson = JsonSerializer.Serialize(new[] { (int)DateTime.UtcNow.DayOfWeek })
+    };
+
+    private void EditSchedule(IntegrationSchedule schedule)
+        => _editingSchedule = JsonSerializer.Deserialize<IntegrationSchedule>(JsonSerializer.Serialize(schedule));
+
+    private void CancelSchedule() => _editingSchedule = null;
+
+    private async Task SaveScheduleAsync()
+    {
+        if (_editingSchedule is null) return;
+        if (IntegrationScheduleService.SeasonsFor(_editingSchedule).Length == 0)
+        {
+            _integrationMessage = "Choose at least one season for the scheduled job.";
+            return;
+        }
+        await IntegrationScheduleService.SaveAsync(_editingSchedule);
+        await LoadIntegrationSchedulesAsync();
+        _editingSchedule = null;
+        _integrationMessage = "Schedule saved.";
+    }
+
+    private async Task DeleteScheduleAsync(int id)
+    {
+        await IntegrationScheduleService.DeleteAsync(id);
+        await LoadIntegrationSchedulesAsync();
+    }
+
+    private static string RecurrenceUnit(string type, int interval) => type switch
+    {
+        "Daily" => interval == 1 ? "day" : "days",
+        "Weekly" => interval == 1 ? "week" : "weeks",
+        "Monthly" => interval == 1 ? "month" : "months",
+        _ => interval == 1 ? "year" : "years"
+    };
+
+    private bool ScheduleHasWeekday(IntegrationSchedule schedule, int day)
+        => ParseInts(schedule.WeekdaysJson).Contains(day);
+    private void ToggleScheduleWeekday(IntegrationSchedule schedule, int day, bool selected)
+    {
+        var days = ParseInts(schedule.WeekdaysJson);
+        if (selected) days.Add(day); else days.Remove(day);
+        schedule.WeekdaysJson = JsonSerializer.Serialize(days.Order());
+    }
+    private bool ScheduleHasSeason(IntegrationSchedule schedule, string season)
+        => IntegrationScheduleService.SeasonsFor(schedule).Contains(season);
+    private void ToggleScheduleSeason(IntegrationSchedule schedule, string season, bool selected)
+    {
+        var seasons = IntegrationScheduleService.SeasonsFor(schedule).ToHashSet();
+        if (selected) seasons.Add(season); else seasons.Remove(season);
+        schedule.SeasonsJson = JsonSerializer.Serialize(seasons.Order());
+    }
+    private static void UseRemainingSeasons(IntegrationSchedule schedule)
+    {
+        var current = DateTime.UtcNow.Month switch { <= 2 => 0, <= 5 => 1, <= 8 => 2, <= 11 => 3, _ => 0 };
+        schedule.SeasonsJson = JsonSerializer.Serialize(SeasonOptions.Skip(current));
+    }
+    private static HashSet<int> ParseInts(string json)
+    {
+        try { return JsonSerializer.Deserialize<int[]>(json)?.ToHashSet() ?? []; }
+        catch (JsonException) { return []; }
+    }
+    private IReadOnlyList<DateTime> PreviewOccurrences(IntegrationSchedule schedule)
+        => IntegrationScheduleService.GetNextOccurrences(schedule, 8);
+    private static string Capitalize(string value) => char.ToUpperInvariant(value[0]) + value[1..];
+    private static string YearScopeText(IntegrationSchedule schedule)
+    {
+        var start = DateTime.UtcNow.Year + schedule.YearOffset;
+        var end = start + schedule.YearCount - 1;
+        return start == end ? start.ToString() : $"{start}–{end}";
+    }
+    private static string DescribeSchedule(IntegrationSchedule s)
+        => $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}";
+
+    private async Task StartInitialImportAsync(string source)
+    {
+        _initialImporting = true;
+        _integrationMessage = null;
+        try
+        {
+            var job = await SyncJobService.QueueInitialImportAsync(source);
+            _integrationMessage = job is null
+                ? $"{source} already has an active import."
+                : $"Initial import started with {source} winter 1960. Each following season will queue only after the previous one completes.";
+            await LoadJobsAsync();
+            StartPolling();
+        }
+        finally { _initialImporting = false; }
     }
 
     private async Task RunQueuedJobsNowAsync()

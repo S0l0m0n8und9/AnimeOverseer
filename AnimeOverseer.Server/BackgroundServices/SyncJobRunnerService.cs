@@ -132,6 +132,9 @@ public class SyncJobRunnerService(
         }
 
         logger.LogInformation("Sync job {Id} ({Type}) finished with status {Status}", job.Id, job.JobType, job.Status);
+        // Historical imports intentionally advance only after a successful single-season job.
+        // This keeps the queue at one source request unit and preserves each API client's throttling.
+        await scope.ServiceProvider.GetRequiredService<SyncJobService>().QueueNextInitialImportAsync(job);
         return true;
     }
 
