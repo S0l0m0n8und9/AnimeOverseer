@@ -348,10 +348,16 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
 
     private static double BestAliasScore(Anime source, Anime existing)
     {
-        var sourceNames = Names(source).Select(NameTokens).Where(tokens => tokens.Count >= 2).ToList();
-        var existingNames = Names(existing).Select(NameTokens).Where(tokens => tokens.Count >= 2).ToList();
+        // Tokenize the original titles rather than Names(), which removes punctuation
+        // for exact comparisons and would collapse word boundaries before scoring.
+        var sourceNames = RawNames(source).Select(NameTokens).Where(tokens => tokens.Count >= 2).ToList();
+        var existingNames = RawNames(existing).Select(NameTokens).Where(tokens => tokens.Count >= 2).ToList();
         return sourceNames.SelectMany(left => existingNames.Select(right => TokenScore(left, right))).DefaultIfEmpty(0).Max();
     }
+
+    private static IEnumerable<string> RawNames(Anime anime)
+        => new[] { anime.Title, anime.OriginalTitle }.Concat(anime.AlternativeTitles).Concat(anime.TitleAliases.Select(alias => alias.Title))
+            .OfType<string>().Where(title => !string.IsNullOrWhiteSpace(title));
 
     private static HashSet<string> NameTokens(string name)
     {
