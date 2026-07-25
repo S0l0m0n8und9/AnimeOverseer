@@ -2085,6 +2085,27 @@ img {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
+.title-aliases {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: -0.45rem 0 1rem;
+}
+
+.title-aliases summary {
+    cursor: pointer;
+    color: var(--accent-light);
+    font-weight: 600;
+}
+
+.title-aliases ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.title-aliases li + li {
+    margin-top: 0.25rem;
+}
+
 .artwork-gallery {
     margin: 1.5rem 2rem 0;
     padding-top: 1.25rem;

@@ -48,11 +48,14 @@ public class AnimeScheduleApiService(HttpClient httpClient, SettingsService sett
     private static Anime Map(JsonElement value)
     {
         var image = Get(value, "imageVersionRoute");
+        var names = value.TryGetProperty("names", out var valueNames) ? valueNames : default;
+        var english = Get(names, "english");
         return new Anime
         {
             MALId = GetMalId(value),
-            Title = Get(value, "title") ?? Get(value, "route") ?? "Unknown",
-            OriginalTitle = value.TryGetProperty("names", out var names) ? Get(names, "native") : null,
+            Title = english ?? Get(value, "title") ?? Get(value, "route") ?? "Unknown",
+            HasEnglishTitle = !string.IsNullOrWhiteSpace(english),
+            OriginalTitle = Get(names, "native"),
             AlternativeTitles = value.TryGetProperty("names", out var alternativeNames) ? Names(alternativeNames) : [],
             Synopsis = Get(value, "description"),
             ImageUrl = string.IsNullOrWhiteSpace(image) ? null : ImageBaseUrl + image.TrimStart('/'),
@@ -94,7 +97,7 @@ public class AnimeScheduleApiService(HttpClient httpClient, SettingsService sett
     }
 
     private static string? Get(JsonElement value, string property)
-        => value.TryGetProperty(property, out var item) && item.ValueKind != JsonValueKind.Null ? item.GetString() : null;
+        => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.ValueKind != JsonValueKind.Null ? item.GetString() : null;
     private static int? Int(JsonElement value, string property)
         => value.TryGetProperty(property, out var item) && item.TryGetInt32(out var number) ? number : null;
     private static DateTime? Date(JsonElement value, string property)

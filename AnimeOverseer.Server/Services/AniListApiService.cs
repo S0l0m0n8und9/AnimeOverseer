@@ -9,7 +9,7 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
 {
     private const string ApiUrl = "https://graphql.anilist.co";
     private const string MediaFields = @"
-        id idMal title { romaji english native }
+        id idMal title { romaji english native } synonyms
         coverImage { large } bannerImage description(asHtml: false) format episodes duration status
         averageScore startDate { year month day } endDate { year month day }
         genres tags { name category isMediaSpoiler }
@@ -107,7 +107,11 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             Title = english ?? romaji ?? native ?? "Unknown",
             HasEnglishTitle = !string.IsNullOrWhiteSpace(english),
             OriginalTitle = romaji ?? native,
-            AlternativeTitles = new[] { english, romaji, native }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList(),
+            AlternativeTitles = new[] { english, romaji, native }
+                .Concat(element.TryGetProperty("synonyms", out var synonyms) && synonyms.ValueKind == JsonValueKind.Array
+                    ? synonyms.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString())
+                    : [])
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList(),
             Synopsis = GetString(element, "description")?.Replace("<br>", "\n").Replace("<i>", "").Replace("</i>", "").Replace("<b>", "").Replace("</b>", "").Trim(),
             ImageUrl = element.TryGetProperty("coverImage", out var image) ? GetString(image, "large") : null,
             SourceImages = Artwork(element, image),

@@ -52,10 +52,15 @@ public class MyAnimeListApiService(HttpClient httpClient, IConfiguration configu
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
     }
 
-    private static Anime Map(JsonElement x) => new()
+    private static Anime Map(JsonElement x)
     {
-        MALId = x.GetProperty("id").GetInt32(), Title = x.GetProperty("title").GetString() ?? "Unknown",
-        OriginalTitle = x.TryGetProperty("alternative_titles", out var titles) && titles.TryGetProperty("ja", out var ja) ? ja.GetString() : null,
+        var titles = x.TryGetProperty("alternative_titles", out var alternativeTitles) ? alternativeTitles : default;
+        var english = Get(titles, "en");
+        return new Anime
+        {
+        MALId = x.GetProperty("id").GetInt32(), Title = english ?? x.GetProperty("title").GetString() ?? "Unknown",
+        HasEnglishTitle = !string.IsNullOrWhiteSpace(english),
+        OriginalTitle = Get(titles, "ja"),
         AlternativeTitles = GetAlternativeTitles(x),
         Synopsis = Get(x, "synopsis"), ImageUrl = x.TryGetProperty("main_picture", out var pic) ? Get(pic, "large") ?? Get(pic, "medium") : null,
         SourceImages = x.TryGetProperty("main_picture", out var picture) && (Get(picture, "large") ?? Get(picture, "medium")) is { Length: > 0 } poster
@@ -66,8 +71,9 @@ public class MyAnimeListApiService(HttpClient httpClient, IConfiguration configu
         Rating = x.TryGetProperty("mean", out var mean) && mean.ValueKind != JsonValueKind.Null ? mean.GetDecimal() : null,
         StartDate = Date(x, "start_date"), EndDate = Date(x, "end_date"),
         AnimeGenres = x.TryGetProperty("genres", out var genres) ? genres.EnumerateArray().Select(g => new AnimeGenre { Genre = new Genre { Name = Get(g, "name") ?? "" } }).Where(g => g.Genre.Name.Length > 0).ToList() : []
-    };
-    private static string? Get(JsonElement x, string name) => x.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v.GetString() : null;
+        };
+    }
+    private static string? Get(JsonElement x, string name) => x.ValueKind == JsonValueKind.Object && x.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v.GetString() : null;
     private static List<string> GetAlternativeTitles(JsonElement anime)
     {
         if (!anime.TryGetProperty("alternative_titles", out var titles)) return [];

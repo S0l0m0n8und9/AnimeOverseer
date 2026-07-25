@@ -28,14 +28,16 @@ public class Anime
     public string Title { get; set; } = string.Empty;
 
     // Indicates that Title came from a source's explicitly localized English field.
-    // This is only used while importing and is not persisted.
-    [NotMapped]
+    // Persisted so a later romaji-only sync cannot replace an English title.
     public bool HasEnglishTitle { get; set; }
 
-    // Provider-supplied English, romaji, native, and synonym titles used only
-    // while resolving the catalogue identity. They are intentionally not stored.
+    // Provider-supplied English, romaji, native, and synonym titles used while
+    // resolving the catalogue identity. They are retained as AnimeTitleAlias
+    // rows after import so aliases from one provider can match future imports.
     [NotMapped]
     public List<string> AlternativeTitles { get; set; } = new();
+
+    public List<AnimeTitleAlias> TitleAliases { get; set; } = new();
 
     public string? OriginalTitle { get; set; }
 
@@ -110,6 +112,14 @@ public class AnimeImage
     public string Type { get; set; } = "Poster"; // Poster, Banner, Background
     public string ImageUrl { get; set; } = string.Empty;
     public string? LocalImagePath { get; set; }
+}
+
+public class AnimeTitleAlias
+{
+    public int Id { get; set; }
+    public int AnimeId { get; set; }
+    public Anime Anime { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
 }
 
 public class SourceImage

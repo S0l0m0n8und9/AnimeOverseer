@@ -91,6 +91,18 @@
                     {
                         <p class="original-title">@anime.OriginalTitle</p>
                     }
+                    @if (DisplayAliases.Count > 0)
+                    {
+                        <details class="title-aliases">
+                            <summary>Also known as (@DisplayAliases.Count)</summary>
+                            <ul>
+                                @foreach (var alias in DisplayAliases)
+                                {
+                                    <li>@alias</li>
+                                }
+                            </ul>
+                        </details>
+                    }
 
                     <div class="meta-badges">
                         @if (!string.IsNullOrEmpty(anime.Type))
@@ -340,6 +352,15 @@
     private List<AnimeImage> GalleryImages => anime?.Images
         .OrderBy(image => image.Type)
         .ThenBy(image => image.Source)
+        .ToList() ?? [];
+
+    private List<string> DisplayAliases => anime?.TitleAliases
+        .Select(alias => alias.Title.Trim())
+        .Where(title => !string.IsNullOrWhiteSpace(title)
+            && !string.Equals(title, anime.Title, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(title, anime.OriginalTitle, StringComparison.OrdinalIgnoreCase))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(title => title, StringComparer.OrdinalIgnoreCase)
         .ToList() ?? [];
 
     private AnimeImage? CurrentImage => GalleryImages.FirstOrDefault(image => image.Id == _selectedImageId)

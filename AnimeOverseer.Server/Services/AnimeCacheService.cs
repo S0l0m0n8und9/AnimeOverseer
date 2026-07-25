@@ -10,7 +10,7 @@ namespace AnimeOverseer.Server.Services;
 public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, ImageCacheService imageCache) : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
-    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.Images).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
+    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.Images).Include(a => a.TitleAliases).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
@@ -143,7 +143,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         // IDs remain the primary identity. Load title candidates as well so a
         // provider record lacking a shared ID can still merge with its existing
         // English, romaji, native, or synonym title instead of creating a duplicate.
-        var existingRows = await db.Animes.ToListAsync(ct);
+        var existingRows = await db.Animes.Include(a => a.TitleAliases).ToListAsync(ct);
         var existing = new Dictionary<string, Anime>();
         var existingByName = new Dictionary<string, HashSet<Anime>>(StringComparer.Ordinal);
         foreach (var row in existingRows)
@@ -166,6 +166,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
                 }
             }
             Copy(target, source);
+            await StoreTitleAliasesAsync(target, source, ct);
             if (source.AniListId is > 0) existing[$"a:{source.AniListId}"] = target;
             if (source.MALId is > 0) existing[$"m:{source.MALId}"] = target;
             AddNameCandidates(existingByName, source, target);
@@ -224,7 +225,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
     }
 
     private static IEnumerable<string> Names(Anime anime)
-        => new[] { anime.Title, anime.OriginalTitle }.Concat(anime.AlternativeTitles)
+        => new[] { anime.Title, anime.OriginalTitle }.Concat(anime.AlternativeTitles).Concat(anime.TitleAliases.Select(alias => alias.Title))
             .Select(NormalizeName).Where(name => name.Length >= 3).Distinct();
 
     private static string NormalizeName(string? value)
@@ -275,7 +276,31 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         return union == 0 ? 0 : (double)left.Intersect(right).Count() / union;
     }
 
-    private static void Copy(Anime t, Anime s) { t.Title=s.Title; t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl; t.MALId=s.MALId; t.AniListId=s.AniListId; t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate; }
+    private static void Copy(Anime t, Anime s)
+    {
+        // Prefer an explicitly localized English title and never replace it with
+        // a provider's romaji/default title on a later catalogue sync.
+        if (!t.HasEnglishTitle || s.HasEnglishTitle)
+        {
+            t.Title = s.Title;
+            t.HasEnglishTitle = s.HasEnglishTitle;
+        }
+        t.OriginalTitle=s.OriginalTitle; t.Synopsis=s.Synopsis; t.ImageUrl=s.ImageUrl; t.MALId=s.MALId; t.AniListId=s.AniListId; t.Type=s.Type; t.Episodes=s.Episodes; t.Duration=s.Duration; t.Rating=s.Rating; t.Status=s.Status; t.StartDate=s.StartDate; t.EndDate=s.EndDate;
+    }
+    private async Task StoreTitleAliasesAsync(Anime target, Anime source, CancellationToken ct)
+    {
+        var titles = new[] { source.Title, source.OriginalTitle }.Concat(source.AlternativeTitles)
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => title.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        var existing = await db.AnimeTitleAliases
+            .Where(alias => alias.AnimeId == target.Id)
+            .Select(alias => alias.Title)
+            .ToListAsync(ct);
+        foreach (var title in titles.Where(title => !existing.Contains(title, StringComparer.OrdinalIgnoreCase)))
+            db.AnimeTitleAliases.Add(new AnimeTitleAlias { Anime = target, Title = title });
+    }
     private async Task StoreImagesAsync(Anime target, Anime source, CancellationToken ct)
     {
         var candidates = source.SourceImages.Count > 0

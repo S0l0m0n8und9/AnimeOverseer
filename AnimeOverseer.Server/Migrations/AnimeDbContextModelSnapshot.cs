@@ -38,6 +38,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<int?>("Episodes")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("HasEnglishTitle")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 
@@ -115,6 +118,27 @@ namespace AnimeOverseer.Server.Migrations
                         .IsUnique();
 
                     b.ToTable("AnimeImages");
+                });
+
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeTitleAlias", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AnimeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnimeId", "Title")
+                        .IsUnique();
+
+                    b.ToTable("AnimeTitleAliases");
                 });
 
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeDemographic", b =>
@@ -409,6 +433,17 @@ namespace AnimeOverseer.Server.Migrations
                     b.Navigation("Anime");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeTitleAlias", b =>
+                {
+                    b.HasOne("AnimeOverseer.Server.Models.Anime", "Anime")
+                        .WithMany("TitleAliases")
+                        .HasForeignKey("AnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Anime");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeDemographic", b =>
                 {
                     b.HasOne("AnimeOverseer.Server.Models.Anime", "Anime")
@@ -480,6 +515,8 @@ namespace AnimeOverseer.Server.Migrations
                     b.Navigation("AnimeGenres");
 
                     b.Navigation("Images");
+
+                    b.Navigation("TitleAliases");
 
                     b.Navigation("AnimeThemes");
 
