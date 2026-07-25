@@ -52,19 +52,9 @@
 
     private void NavigateWithSearch(string? query)
     {
-        var currentUri = NavManager.ToAbsoluteUri(NavManager.Uri);
-        var parts = currentUri.Query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Where(part => !Uri.UnescapeDataString(part.Split('=', 2)[0])
-                .Equals("q", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (!string.IsNullOrWhiteSpace(query))
-            parts.Add("q=" + Uri.EscapeDataString(query.Trim()));
-
-        var destination = parts.Count == 0
-            ? currentUri.AbsolutePath
-            : currentUri.AbsolutePath + "?" + string.Join("&", parts);
+        var destination = string.IsNullOrWhiteSpace(query)
+            ? "/"
+            : "/?q=" + Uri.EscapeDataString(query.Trim());
         NavManager.NavigateTo(destination);
     }
 
