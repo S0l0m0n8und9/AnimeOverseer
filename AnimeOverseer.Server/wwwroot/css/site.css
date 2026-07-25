@@ -450,6 +450,160 @@ img {
     color: var(--text-primary);
 }
 
+.integration-schedules {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(9, 17, 31, 0.3);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: var(--radius-md);
+}
+
+.integration-schedule-editor {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(139, 92, 246, 0.07);
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    border-left: 4px solid #8b5cf6;
+    border-radius: 0.5rem;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.integration-schedule-editor-header h4 {
+    margin: 0.3rem 0 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.integration-schedule-editor-header p {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.integration-editing-badge,
+.integration-record-editing-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.42rem;
+    color: #ddd6fe;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: rgba(139, 92, 246, 0.28);
+    border: 1px solid rgba(167, 139, 250, 0.45);
+    border-radius: 999px;
+}
+
+.integration-schedules-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.85rem;
+}
+
+.integration-schedules h4 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.integration-schedules h4 span {
+    display: inline-flex;
+    justify-content: center;
+    min-width: 1.35rem;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    background: rgba(148, 163, 184, 0.14);
+    border-radius: 999px;
+}
+
+.integration-schedules-header p {
+    margin: 0.2rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.integration-schedule-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.integration-schedule-record {
+    padding: 0.9rem 1rem;
+    background: rgba(30, 41, 59, 0.68);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 0.5rem;
+}
+
+.integration-schedule-main,
+.integration-schedule-actions,
+.integration-schedule-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.integration-schedule-main {
+    gap: 1rem;
+    justify-content: space-between;
+}
+
+.integration-schedule-summary strong {
+    color: var(--text-primary);
+}
+
+.integration-record-editing-label {
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+.integration-schedule-record.is-editing {
+    background: rgba(69, 45, 117, 0.28);
+    border-color: rgba(139, 92, 246, 0.58);
+}
+
+.integration-schedule-meta {
+    gap: 0.45rem 0.75rem;
+    margin-top: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.integration-schedule-status {
+    font-size: 0.78rem;
+}
+
+.integration-schedule-status.is-enabled { color: #86efac; }
+.integration-schedule-status.is-disabled { color: #94a3b8; }
+.integration-migration-status { color: #90caf9; font-size: 0.85rem; }
+
+.integration-schedule-actions { gap: 0.5rem; }
+
+.integration-schedule-remove { color: #fca5a5; }
+
+.integration-schedule-next {
+    margin-top: 0.65rem;
+    padding-top: 0.65rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.integration-schedule-next span {
+    margin-right: 0.35rem;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .integration-schedules { padding: 0.75rem; }
+    .integration-schedule-main { align-items: flex-start; }
+}
+
 .settings-table-wrapper {
     overflow-x: auto;
     margin-bottom: 0.75rem;

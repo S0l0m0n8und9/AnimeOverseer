@@ -69,7 +69,14 @@
         @if (_editingSchedule is not null)
         {
             var schedule = _editingSchedule;
-            <div style="border-top:1px solid #333;margin-top:1rem;padding-top:1rem;display:grid;gap:.75rem">
+            <div class="integration-schedule-editor">
+                <div class="integration-schedule-editor-header">
+                    <div>
+                        <span class="integration-editing-badge">Editing</span>
+                        <h4>@(schedule.Id == 0 ? "Creating a new schedule" : $"Editing schedule: {schedule.Name}")</h4>
+                        <p>Changes are not applied until you save.</p>
+                    </div>
+                </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
                     <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
                     <label>Source<select class="form-input" style="display:block" @bind="schedule.Source">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
@@ -115,19 +122,33 @@
                 </div>
                 }
                 <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Next occurrences</strong><ol style="margin:.35rem 0 0;padding-left:1.4rem">@foreach (var occurrence in PreviewOccurrences(schedule)) { <li>@occurrence.ToLocalTime().ToString("ddd, d MMM yyyy h:mm tt")</li> }</ol></div>
-                <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" @onclick="SaveScheduleAsync">Save schedule</button><button class="btn btn-secondary" @onclick="CancelSchedule">Cancel</button>@if (schedule.Id != 0) { <label style="color:#aaa;font-size:.9em;margin-left:.5rem"><input type="checkbox" @bind="_restartScheduleOnSave" /> Run schedule again after saving</label> }</div>
+                <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" @onclick="SaveScheduleAsync">Save schedule</button><button class="btn btn-secondary" @onclick="CancelSchedule">Discard changes</button>@if (schedule.Id != 0) { <label style="color:#aaa;font-size:.9em;margin-left:.5rem"><input type="checkbox" @bind="_restartScheduleOnSave" /> Run schedule again after saving</label> }</div>
             </div>
         }
-        <div style="display:grid;gap:.65rem;margin-top:.75rem">
-            @foreach (var schedule in _integrationSchedules)
-            {
-                var activeMigration = schedule.WorkType == "InitialMigration" ? ActiveMigrationFor(schedule.Source) : null;
-                <div style="border-top:1px solid #333;padding-top:.65rem">
-                    <div style="display:flex;gap:.8rem;align-items:center;flex-wrap:wrap"><strong>@schedule.Name</strong><span>@schedule.Source</span><span>@(schedule.WorkType == "InitialMigration" ? "Initial migration" : "Catalogue sync")</span><span style="color:#aaa">@DescribeSchedule(schedule)</span><span style="color:#888">@(schedule.Enabled ? "Enabled" : "Disabled")</span>@if (activeMigration is not null) { <span style="color:#90caf9">@activeMigration.Status #@activeMigration.Id</span><button class="btn btn-secondary" @onclick="() => CancelMigrationAsync(activeMigration.Id)">Cancel migration</button> }<button class="btn btn-secondary" style="margin-left:auto" @onclick="() => EditSchedule(schedule)">Edit</button><button class="btn btn-secondary" @onclick="() => DeleteScheduleAsync(schedule.Id)">Remove</button></div>
-                    <div style="font-size:.85em;color:#aaa;margin-top:.35rem">Next: @string.Join(" · ", PreviewOccurrences(schedule).Take(4).Select(d => d.ToLocalTime().ToString("d MMM h:mm tt")))</div>
+        <section class="integration-schedules" aria-labelledby="saved-schedules-heading">
+            <div class="integration-schedules-header">
+                <div>
+                    <h4 id="saved-schedules-heading">Saved schedules <span>@_integrationSchedules.Count</span></h4>
+                    <p>Each schedule runs independently.</p>
                 </div>
-            }
-        </div>
+            </div>
+            <div class="integration-schedule-list">
+                @foreach (var schedule in _integrationSchedules)
+                {
+                    var activeMigration = schedule.WorkType == "InitialMigration" ? ActiveMigrationFor(schedule.Source) : null;
+                    <article class="integration-schedule-record @(schedule.Id != 0 && schedule.Id == _editingSchedule?.Id ? "is-editing" : "")">
+                        <div class="integration-schedule-main">
+                            <div class="integration-schedule-summary">
+                                <strong>@schedule.Name</strong>@if (schedule.Id != 0 && schedule.Id == _editingSchedule?.Id) { <span class="integration-record-editing-label">Currently editing</span> }
+                                <div class="integration-schedule-meta"><span>@schedule.Source</span><span>@(schedule.WorkType == "InitialMigration" ? "Initial migration" : "Catalogue sync")</span><span>@DescribeSchedule(schedule)</span><span class="integration-schedule-status @(schedule.Enabled ? "is-enabled" : "is-disabled")">@(schedule.Enabled ? "Enabled" : "Disabled")</span></div>
+                            </div>
+                            <div class="integration-schedule-actions">@if (activeMigration is not null) { <span class="integration-migration-status">@activeMigration.Status #@activeMigration.Id</span><button class="btn btn-secondary" @onclick="() => CancelMigrationAsync(activeMigration.Id)">Cancel migration</button> }<button class="btn btn-secondary" @onclick="() => EditSchedule(schedule)">Edit</button><button class="btn btn-secondary integration-schedule-remove" @onclick="() => DeleteScheduleAsync(schedule.Id)">Remove</button></div>
+                        </div>
+                        <div class="integration-schedule-next"><span>Next runs</span> @string.Join(" · ", PreviewOccurrences(schedule).Take(4).Select(d => d.ToLocalTime().ToString("d MMM h:mm tt")))</div>
+                    </article>
+                }
+            </div>
+        </section>
         @if (!string.IsNullOrEmpty(_integrationMessage)) { <p style="margin:.65rem 0 0;color:#aaa;font-size:.85em">@_integrationMessage</p> }
     </section>
 
