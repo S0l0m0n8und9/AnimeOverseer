@@ -33,7 +33,7 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
         await db.SaveChangesAsync();
     }
 
-    public async Task<int> SaveAsync(IntegrationSchedule input)
+    public async Task<int> SaveAsync(IntegrationSchedule input, bool restartOccurrences = false)
     {
         if (!CatalogueSources.Contains(input.Source)) throw new ArgumentException("Unknown catalogue source.");
         var schedule = input.Id == 0 ? new IntegrationSchedule() : await db.IntegrationSchedules.FindAsync(input.Id);
@@ -41,9 +41,10 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
         schedule.Name = string.IsNullOrWhiteSpace(input.Name) ? $"{input.Source} schedule" : input.Name.Trim();
         schedule.Source = input.Source;
+        schedule.WorkType = input.WorkType == "InitialMigration" ? "InitialMigration" : "CatalogueSync";
         schedule.Enabled = input.Enabled;
         schedule.StartAt = DateTime.SpecifyKind(input.StartAt, DateTimeKind.Utc);
-        schedule.RecurrenceType = input.RecurrenceType is "Daily" or "Weekly" or "Monthly" or "Yearly" ? input.RecurrenceType : "Daily";
+        schedule.RecurrenceType = input.RecurrenceType is "Once" or "Daily" or "Weekly" or "Monthly" or "Yearly" ? input.RecurrenceType : "Daily";
         schedule.Interval = Math.Clamp(input.Interval, 1, 999);
         schedule.WeekdaysJson = NormalizeWeekdays(input.WeekdaysJson);
         schedule.MonthlyMode = input.MonthlyMode == "NthWeekday" ? "NthWeekday" : "DayOfMonth";
@@ -56,6 +57,18 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
         schedule.YearOffset = Math.Clamp(input.YearOffset, -100, 100);
         schedule.YearCount = Math.Clamp(input.YearCount, 1, 100);
         schedule.SeasonsJson = NormalizeSeasons(input.SeasonsJson);
+        // A migration schedule starts one chained import; it should not restart the
+        // range on every recurrence unless the user deliberately creates another one.
+        if (schedule.WorkType == "InitialMigration" && schedule.EndType == "Never")
+        {
+            schedule.EndType = "After";
+            schedule.EndAfterOccurrences = 1;
+        }
+        if (restartOccurrences && input.Id != 0)
+        {
+            schedule.LastQueuedAt = null;
+            schedule.QueuedOccurrences = 0;
+        }
         if (input.Id == 0) db.IntegrationSchedules.Add(schedule);
         await db.SaveChangesAsync();
         return schedule.Id;
@@ -86,12 +99,28 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
             // Source work is still serial. A second schedule for the same source waits for its turn.
             if (await db.SyncJobs.AnyAsync(j => j.JobType == schedule.Source && (j.Status == "Queued" || j.Status == "Running"), ct)) continue;
 
-            db.SyncJobs.Add(new SyncJob
-            {
-                JobType = schedule.Source,
-                QueuedAt = now,
-                Parameters = JsonSerializer.Serialize(new { years = YearsFor(schedule, now), seasons = SeasonsFor(schedule) })
-            });
+            var years = YearsFor(schedule, now);
+            var seasons = SeasonsFor(schedule);
+            db.SyncJobs.Add(schedule.WorkType == "InitialMigration"
+                ? new SyncJob
+                {
+                    JobType = schedule.Source,
+                    QueuedAt = now,
+                    Parameters = JsonSerializer.Serialize(new
+                    {
+                        initialImport = true,
+                        initialImportEndYear = years[^1],
+                        initialImportSeasons = seasons,
+                        years = new[] { years[0] },
+                        seasons = new[] { seasons[0] }
+                    })
+                }
+                : new SyncJob
+                {
+                    JobType = schedule.Source,
+                    QueuedAt = now,
+                    Parameters = JsonSerializer.Serialize(new { years, seasons })
+                });
             schedule.LastQueuedAt = now;
             schedule.QueuedOccurrences++;
             queuedAny = true;
@@ -147,6 +176,7 @@ public static class ScheduleRecurrence
         var days = (occurrence.Date - s.StartAt.Date).Days;
         return s.RecurrenceType switch
         {
+            "Once" => occurrence.Date == s.StartAt.Date,
             "Daily" => days % s.Interval == 0,
             "Weekly" => WeeklyMatches(s, occurrence, days),
             "Monthly" => MonthlyMatches(s, occurrence),

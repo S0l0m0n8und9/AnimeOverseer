@@ -39,6 +39,8 @@ public class IntegrationSchedule
     public int Id { get; set; }
     public string Name { get; set; } = "New schedule";
     public string Source { get; set; } = string.Empty;
+    /// <summary>Extensible scheduled action; currently CatalogueSync or InitialMigration.</summary>
+    public string WorkType { get; set; } = "CatalogueSync";
     public bool Enabled { get; set; }
     public DateTime StartAt { get; set; } = DateTime.UtcNow;
     public string RecurrenceType { get; set; } = "Daily";

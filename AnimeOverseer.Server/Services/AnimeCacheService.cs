@@ -294,11 +294,22 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             .Select(title => title.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        var existing = await db.AnimeTitleAliases
+        var existing = (await db.AnimeTitleAliases
             .Where(alias => alias.AnimeId == target.Id)
             .Select(alias => alias.Title)
-            .ToListAsync(ct);
-        foreach (var title in titles.Where(title => !existing.Contains(title, StringComparer.OrdinalIgnoreCase)))
+            .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // A single provider page can contain multiple entries that resolve to the
+        // same local anime. Those aliases are not visible to a database query until
+        // the batch is saved, so include newly tracked aliases before adding more.
+        foreach (var pending in db.ChangeTracker.Entries<AnimeTitleAlias>()
+            .Where(entry => entry.State != EntityState.Deleted &&
+                            (entry.Entity.AnimeId == target.Id || ReferenceEquals(entry.Entity.Anime, target)))
+            .Select(entry => entry.Entity.Title))
+            existing.Add(pending);
+
+        foreach (var title in titles.Where(title => existing.Add(title)))
             db.AnimeTitleAliases.Add(new AnimeTitleAlias { Anime = target, Title = title });
     }
     private async Task StoreImagesAsync(Anime target, Anime source, CancellationToken ct)

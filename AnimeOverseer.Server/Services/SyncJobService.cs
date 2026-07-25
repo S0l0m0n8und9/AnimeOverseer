@@ -64,24 +64,37 @@ public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
             if (!document.RootElement.TryGetProperty("initialImport", out var initial) || !initial.GetBoolean()) return;
             var year = document.RootElement.GetProperty("years").EnumerateArray().Single().GetInt32();
             var season = document.RootElement.GetProperty("seasons").EnumerateArray().Single().GetString();
-            var seasonIndex = Array.IndexOf(ImportSeasons, season);
+            var importSeasons = document.RootElement.TryGetProperty("initialImportSeasons", out var configuredSeasons)
+                ? configuredSeasons.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Cast<string>().ToArray()
+                : ImportSeasons;
+            var seasonIndex = Array.IndexOf(importSeasons, season);
             if (seasonIndex < 0) return;
-            var nextYear = seasonIndex == ImportSeasons.Length - 1 ? year + 1 : year;
-            var nextSeason = ImportSeasons[(seasonIndex + 1) % ImportSeasons.Length];
-            if (nextYear > DateTime.UtcNow.Year + 1) return;
-            await QueueInitialImportPartAsync(completedJob.JobType, nextYear, nextSeason);
+            var nextYear = seasonIndex == importSeasons.Length - 1 ? year + 1 : year;
+            var nextSeason = importSeasons[(seasonIndex + 1) % importSeasons.Length];
+            var endYear = document.RootElement.TryGetProperty("initialImportEndYear", out var configuredEndYear)
+                ? configuredEndYear.GetInt32()
+                : DateTime.UtcNow.Year + 1;
+            if (nextYear > endYear) return;
+            await QueueInitialImportPartAsync(completedJob.JobType, nextYear, nextSeason, endYear, importSeasons);
         }
         catch (JsonException) { }
         catch (InvalidOperationException) { }
     }
 
-    private async Task<SyncJob> QueueInitialImportPartAsync(string source, int year, string season)
+    private async Task<SyncJob> QueueInitialImportPartAsync(string source, int year, string season, int? endYear = null, string[]? importSeasons = null)
     {
         var job = new SyncJob
         {
             JobType = source,
             QueuedAt = DateTime.UtcNow,
-            Parameters = JsonSerializer.Serialize(new { initialImport = true, years = new[] { year }, seasons = new[] { season } })
+            Parameters = JsonSerializer.Serialize(new
+            {
+                initialImport = true,
+                initialImportEndYear = endYear ?? DateTime.UtcNow.Year + 1,
+                initialImportSeasons = importSeasons ?? ImportSeasons,
+                years = new[] { year },
+                seasons = new[] { season }
+            })
         };
         db.SyncJobs.Add(job);
         await db.SaveChangesAsync();

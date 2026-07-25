@@ -268,6 +268,10 @@ namespace AnimeOverseer.Server.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("WorkType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("YearCount")
                         .HasColumnType("INTEGER");
 

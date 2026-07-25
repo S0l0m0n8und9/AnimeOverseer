@@ -111,14 +111,15 @@ public class SyncJobRunnerService(
         }
         catch (Exception ex)
         {
+            var error = FormatError(ex);
             job.Status = "Failed";
-            job.Message = ex.Message;
+            job.Message = error;
             db.SyncJobLogs.Add(new SyncJobLog
             {
                 SyncJobId = job.Id,
                 Timestamp = DateTime.UtcNow,
                 Level = "Error",
-                Message = $"Sync failed — {ex.Message}"
+                Message = $"Sync failed — {error}"
             });
             logger.LogError(ex, "Sync job {Id} ({Type}) failed", job.Id, job.JobType);
         }
@@ -136,6 +137,17 @@ public class SyncJobRunnerService(
         // This keeps the queue at one source request unit and preserves each API client's throttling.
         await scope.ServiceProvider.GetRequiredService<SyncJobService>().QueueNextInitialImportAsync(job);
         return true;
+    }
+
+    private static string FormatError(Exception exception)
+    {
+        var messages = new List<string>();
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message) && !messages.Contains(current.Message, StringComparer.Ordinal))
+                messages.Add(current.Message);
+        }
+        return messages.Count == 0 ? exception.GetType().Name : string.Join(" → ", messages);
     }
 
     private async Task MonitorCancellationAsync(int jobId, CancellationTokenSource jobCts, CancellationToken ct, Action onCancellationRequested)
