@@ -107,6 +107,63 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         Assert.NotNull(job.FinishedAt);
     }
 
+    [Fact]
+    public async Task Kitsu_item_failure_is_logged_and_does_not_stop_remaining_items()
+    {
+        await using var db = CreateDb();
+        var season = await AddSeasonAsync(db);
+        db.Animes.AddRange(
+            new Anime { MALId = 401, Title = "Transient failure", SeasonId = season.Id },
+            new Anime { MALId = 402, Title = "Continues syncing", SeasonId = season.Id });
+        var job = new SyncJob { JobType = "Kitsu" };
+        db.SyncJobs.Add(job);
+        await db.SaveChangesAsync();
+
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var handler = new SequenceHandler();
+        var sync = new SyncService(
+            db,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new AniListApiService(new HttpClient(), NullLogger<AniListApiService>.Instance),
+            new MyAnimeListApiService(new HttpClient(), new ConfigurationBuilder().Build(), new SettingsService(db)),
+            new AnimeScheduleApiService(new HttpClient(), new SettingsService(db)),
+            new KitsuApiService(new HttpClient(handler)),
+            NullLogger<SyncService>.Instance);
+
+        await sync.RunKitsuSyncAsync(job, CancellationToken.None);
+
+        Assert.Equal(2, job.ProcessedCount);
+        var logs = await db.SyncJobLogs.Where(log => log.SyncJobId == job.Id).Select(log => log.Message).ToListAsync();
+        Assert.Contains(logs, message => message.Contains("Kitsu item MAL 401 (Transient failure) failed (HttpRequestException)"));
+        Assert.Contains(logs, message => message.Contains("Sync complete — 2 processed, 1 errors"));
+    }
+
+    [Fact]
+    public async Task Runner_records_a_fatal_sync_failure()
+    {
+        await using (var db = CreateDb())
+        {
+            db.SyncJobs.Add(new SyncJob { JobType = "AniList", Parameters = "{\"years\":[2026],\"seasons\":[\"spring\"]}" });
+            await db.SaveChangesAsync();
+        }
+
+        await using var provider = CreateRunnerProvider(new ThrowingHandler());
+        var runner = provider.GetRequiredService<SyncJobRunnerService>();
+        await runner.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(async () =>
+        {
+            await using var check = CreateDb();
+            return (await check.SyncJobs.SingleAsync()).Status == "Failed";
+        });
+        await runner.StopAsync(CancellationToken.None);
+
+        await using var saved = CreateDb();
+        var job = await saved.SyncJobs.SingleAsync();
+        Assert.Equal("Failed", job.Status);
+        Assert.False(string.IsNullOrWhiteSpace(job.Message));
+        Assert.Contains(await saved.SyncJobLogs.Select(log => log.Message).ToListAsync(), message => message.StartsWith("Sync failed —"));
+    }
+
     private ServiceProvider CreateRunnerProvider(HttpMessageHandler? cacheHandler = null)
     {
         var services = new ServiceCollection();
@@ -117,7 +174,7 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddScoped<HttpClient>();
         services.AddScoped<SettingsService>();
-        services.AddScoped<AniListApiService>(service => new AniListApiService(new HttpClient(), NullLogger<AniListApiService>.Instance));
+        services.AddScoped<AniListApiService>(service => new AniListApiService(cacheHandler is null ? new HttpClient() : new HttpClient(cacheHandler), NullLogger<AniListApiService>.Instance));
         services.AddScoped<MyAnimeListApiService>();
         services.AddScoped<AnimeScheduleApiService>();
         services.AddScoped<KitsuApiService>(service => new KitsuApiService(new HttpClient()));
@@ -146,5 +203,24 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             throw new InvalidOperationException("The request should have been cancelled.");
         }
+    }
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromException<HttpResponseMessage>(new HttpRequestException("temporary provider failure"));
+    }
+
+    private sealed class SequenceHandler : HttpMessageHandler
+    {
+        private int calls;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Interlocked.Increment(ref calls) == 1
+                ? Task.FromException<HttpResponseMessage>(new HttpRequestException("temporary provider failure"))
+                : Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"data\":[]}")
+                });
     }
 }

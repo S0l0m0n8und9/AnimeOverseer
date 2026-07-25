@@ -2,6 +2,7 @@ using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using AnimeOverseer.Server.Services;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace AnimeOverseer.Server.BackgroundServices;
 
@@ -121,7 +122,8 @@ public class SyncJobRunnerService(
                 Level = "Error",
                 Message = $"Sync failed — {error}"
             });
-            logger.LogError(ex, "Sync job {Id} ({Type}) failed", job.Id, job.JobType);
+            logger.LogError("Sync job {Id} ({Type}) failed. ErrorType: {ErrorType}; Details: {Details}",
+                job.Id, job.JobType, ex.GetType().Name, Redact(ex.ToString()));
         }
         finally
         {
@@ -147,8 +149,13 @@ public class SyncJobRunnerService(
             if (!string.IsNullOrWhiteSpace(current.Message) && !messages.Contains(current.Message, StringComparer.Ordinal))
                 messages.Add(current.Message);
         }
-        return messages.Count == 0 ? exception.GetType().Name : string.Join(" → ", messages);
+        return messages.Count == 0 ? exception.GetType().Name : Redact(string.Join(" → ", messages));
     }
+
+    private static string Redact(string value)
+        => Regex.Replace(value,
+            @"(?i)((?:access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret|authorization|bearer)\s*(?:=|:|\s)\s*)[^\s,;&]+",
+            "$1[REDACTED]");
 
     private async Task MonitorCancellationAsync(int jobId, CancellationTokenSource jobCts, CancellationToken ct, Action onCancellationRequested)
     {

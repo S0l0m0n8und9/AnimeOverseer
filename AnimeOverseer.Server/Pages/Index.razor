@@ -28,10 +28,10 @@
         <div class="filters-row">
             <label class="filter-label" for="pagesize-select">Load:</label>
             <select id="pagesize-select" value="@pageSize" @onchange="OnPageSizeChanged" class="form-select" style="width:auto">
-                <option value="12">12</option>
-                <option value="24">24</option>
-                <option value="48">48</option>
-                <option value="96">96</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
             </select>
             <span class="filter-label">at a time</span>
             <label class="quick-filter" title="Hide anime already present in Sonarr or Radarr">
@@ -123,7 +123,7 @@
     private List<Anime> allAnimes = new();
     private FilterState filterState = new();
     private SortState sortState = new();
-    private int pageSize = 24;
+    private int pageSize = 100;
     private int totalCount = 0;
     private string searchQuery = string.Empty;
     private bool isLoading = false;
@@ -181,7 +181,7 @@
     {
         var qs = ParseQuery(uri);
 
-        pageSize    = qs.TryGetValue("pageSize", out var ps) && int.TryParse(ps, out var psi) ? psi : 24;
+        pageSize    = qs.TryGetValue("pageSize", out var ps) && int.TryParse(ps, out var psi) ? psi : 100;
         searchQuery = qs.GetValueOrDefault("q", string.Empty);
         hideInLibrary = qs.TryGetValue("hideInLibrary", out var hide) && hide == "1";
         filterState = qs.TryGetValue("filters", out var f)
@@ -211,7 +211,7 @@
     private string BuildUrl()
     {
         var parts = new List<string>();
-        if (pageSize != 24)
+        if (pageSize != 100)
             parts.Add($"pageSize={pageSize}");
         if (!string.IsNullOrEmpty(searchQuery))
             parts.Add($"q={Uri.EscapeDataString(searchQuery)}");

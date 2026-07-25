@@ -18,24 +18,18 @@ public class KitsuApiService : IAnimeDataSource
     {
         var animes = new List<Anime>();
         // Kitsu doesn't have direct season filtering, so we'll return popular anime
-        try
+        var response = await _httpClient.GetAsync($"{ApiUrl}/anime?filter[season]={season.ToLower()}&filter[year]={year}&limit=25");
+        response.EnsureSuccessStatusCode();
+        if (response.IsSuccessStatusCode)
         {
-            var response = await _httpClient.GetAsync($"{ApiUrl}/anime?filter[season]={season.ToLower()}&filter[year]={year}&limit=25");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data");
 
-                foreach (var anime in data.EnumerateArray())
-                {
-                    animes.Add(MapFromKitsu(anime, year, season));
-                }
+            foreach (var anime in data.EnumerateArray())
+            {
+                animes.Add(MapFromKitsu(anime, year, season));
             }
-        }
-        catch
-        {
-            // Handle errors gracefully
         }
         return animes;
     }
@@ -43,24 +37,18 @@ public class KitsuApiService : IAnimeDataSource
     public async Task<List<Anime>> SearchAsync(string query)
     {
         var animes = new List<Anime>();
-        try
+        var response = await _httpClient.GetAsync($"{ApiUrl}/anime?filter[text]={Uri.EscapeDataString(query)}&limit=25");
+        response.EnsureSuccessStatusCode();
+        if (response.IsSuccessStatusCode)
         {
-            var response = await _httpClient.GetAsync($"{ApiUrl}/anime?filter[text]={Uri.EscapeDataString(query)}&limit=25");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data");
 
-                foreach (var anime in data.EnumerateArray())
-                {
-                    animes.Add(MapFromKitsu(anime, 0, ""));
-                }
+            foreach (var anime in data.EnumerateArray())
+            {
+                animes.Add(MapFromKitsu(anime, 0, ""));
             }
-        }
-        catch
-        {
-            // Handle errors gracefully
         }
         return animes;
     }
@@ -73,20 +61,14 @@ public class KitsuApiService : IAnimeDataSource
 
     public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
-        try
+        var response = await _httpClient.GetAsync($"{ApiUrl}/anime/{id}");
+        response.EnsureSuccessStatusCode();
+        if (response.IsSuccessStatusCode)
         {
-            var response = await _httpClient.GetAsync($"{ApiUrl}/anime/{id}");
-            if (response.IsSuccessStatusCode)
-            {
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-                var data = doc.RootElement.GetProperty("data");
-                return MapFromKitsu(data, 0, "");
-            }
-        }
-        catch
-        {
-            // Handle errors gracefully
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data");
+            return MapFromKitsu(data, 0, "");
         }
         return null;
     }

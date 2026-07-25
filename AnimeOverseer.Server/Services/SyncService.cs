@@ -1,11 +1,12 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace AnimeOverseer.Server.Services;
 
-public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, MyAnimeListApiService myAnimeList, AnimeScheduleApiService animeSchedule, KitsuApiService kitsu)
+public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, MyAnimeListApiService myAnimeList, AnimeScheduleApiService animeSchedule, KitsuApiService kitsu, ILogger<SyncService> logger)
 {
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
@@ -110,7 +111,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         Log(job, $"Starting AniList enrichment — {job.TotalCount:N0} anime with MAL IDs{resumeNote}");
         await db.SaveChangesAsync(ct);
 
-        int errors = 0;
+        var failures = new ImportFailures("AniList", logger, db, job);
         foreach (var anime in animes)
         {
             if (ct.IsCancellationRequested) break;
@@ -123,12 +124,19 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                     syncedIds.Add(anime.Id);
                 }
             }
-            catch { errors++; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Record(anime, ex);
+            }
 
             job.ProcessedCount++;
 
             if (job.ProcessedCount % 100 == 0)
-                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
 
             if (job.ProcessedCount % 20 == 0)
             {
@@ -142,10 +150,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
         await db.SaveChangesAsync(ct);
 
-        var summary = errors > 0
-            ? $"Sync complete — {job.ProcessedCount:N0} processed, {errors} errors"
-            : $"Sync complete — {job.ProcessedCount:N0} processed";
-        Log(job, summary, errors > 0 ? "Warning" : "Success");
+        Log(job, failures.Summary(job.ProcessedCount), failures.Count > 0 ? "Warning" : "Success");
         await db.SaveChangesAsync(ct);
     }
 
@@ -165,7 +170,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         Log(job, $"Starting Kitsu enrichment — {job.TotalCount:N0} anime without Kitsu data{resumeNote}");
         await db.SaveChangesAsync(ct);
 
-        int errors = 0;
+        var failures = new ImportFailures("Kitsu", logger, db, job);
         foreach (var anime in animes)
         {
             if (ct.IsCancellationRequested) break;
@@ -178,12 +183,19 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                     syncedIds.Add(anime.Id);
                 }
             }
-            catch { errors++; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Record(anime, ex);
+            }
 
             job.ProcessedCount++;
 
             if (job.ProcessedCount % 100 == 0)
-                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{(errors > 0 ? $" ({errors} errors)" : "")}");
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
 
             if (job.ProcessedCount % 50 == 0)
             {
@@ -197,10 +209,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
         await db.SaveChangesAsync(ct);
 
-        var summary = errors > 0
-            ? $"Sync complete — {job.ProcessedCount:N0} processed, {errors} errors"
-            : $"Sync complete — {job.ProcessedCount:N0} processed";
-        Log(job, summary, errors > 0 ? "Warning" : "Success");
+        Log(job, failures.Summary(job.ProcessedCount), failures.Count > 0 ? "Warning" : "Success");
         await db.SaveChangesAsync(ct);
     }
 
@@ -214,6 +223,40 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             Level = level,
             Message = message
         });
+    }
+
+    private sealed class ImportFailures(string source, ILogger logger, AnimeDbContext db, SyncJob job)
+    {
+        private const int MaxRepresentativeFailures = 3;
+        private readonly List<string> representativeMessages = [];
+        public int Count { get; private set; }
+        public string ProgressSuffix => Count == 0 ? "" : $" ({Count} errors)";
+
+        public void Record(Anime anime, Exception exception)
+        {
+            Count++;
+            var item = anime.MALId is > 0 ? $"MAL {anime.MALId}" : $"local {anime.Id}";
+            if (!string.IsNullOrWhiteSpace(anime.Title)) item += $" ({anime.Title})";
+            var message = $"{source} item {item} failed ({exception.GetType().Name})";
+            logger.LogError("{Source} sync item failed. JobId: {JobId}; Item: {Item}; ErrorType: {ErrorType}; Details: {Details}",
+                source, job.Id, item, exception.GetType().Name, Redact(exception.ToString()));
+            if (representativeMessages.Count < MaxRepresentativeFailures)
+            {
+                representativeMessages.Add(message);
+                // Job logs are user-visible: retain only identity and exception type, never an external error body.
+                db.SyncJobLogs.Add(new SyncJobLog { SyncJobId = job.Id, Timestamp = DateTime.UtcNow, Level = "Warning", Message = message });
+            }
+        }
+
+        public string Summary(int processed)
+            => Count == 0
+                ? $"Sync complete — {processed:N0} processed"
+                : $"Sync complete — {processed:N0} processed, {Count} errors. {string.Join("; ", representativeMessages)}";
+
+        private static string Redact(string value)
+            => Regex.Replace(value,
+                @"(?i)((?:access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret|authorization|bearer)\s*(?:=|:|\s)\s*)[^\s,;&]+",
+                "$1[REDACTED]");
     }
 
     public Task RunMyAnimeListSyncAsync(SyncJob job, CancellationToken ct)
