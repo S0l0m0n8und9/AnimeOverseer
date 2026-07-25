@@ -13,7 +13,7 @@
     else if (_items.Count == 0) { <div class="review-empty"><h3>Nothing needs review</h3><p>Future uncertain title matches will appear here instead of changing catalogue records.</p></div> }
     else
     {
-        <div class="review-toolbar"><strong>@_selected.Count selected</strong><span>Click to select · Shift-click selects a range · Ctrl/Cmd-click adds or removes records.</span><button @onclick='() => ResolveSelectedAsync("Create")' disabled="@(_selected.Count == 0 || _working)">Create as new</button><button @onclick='() => ResolveSelectedAsync("Merge")' disabled="@(!CanMergeSelection || _working)">Merge into shown match</button><button @onclick='() => ResolveSelectedAsync("Defer")' disabled="@(_selected.Count == 0 || _working)">Defer</button><button class="review-plain" @onclick="ClearSelection" disabled="@(_selected.Count == 0)">Clear</button></div>
+        <div class="review-toolbar"><input class="review-select-all" type="checkbox" checked="@AllSelected" @onchange="ToggleAll" aria-label="Select all review records" /><strong>@_selected.Count selected</strong><span>Click to select · Shift-click selects a range · Ctrl/Cmd-click adds or removes records.</span><div class="review-toolbar-actions"><button @onclick='() => ResolveSelectedAsync("Create")' disabled="@(_selected.Count == 0 || _working)">Create as new</button><button @onclick='() => ResolveSelectedAsync("Merge")' disabled="@(!CanMergeSelection || _working)">Merge into shown match</button><button @onclick='() => ResolveSelectedAsync("Defer")' disabled="@(_selected.Count == 0 || _working)">Defer</button><button class="review-plain" @onclick="ClearSelection" disabled="@(_selected.Count == 0)">Clear</button></div></div>
         @if (!string.IsNullOrEmpty(_notice)) { <p class="review-notice">@_notice</p> }
         <div class="review-list">
             @foreach (var item in _items)
@@ -44,6 +44,7 @@
     private string? _notice;
     protected override async Task OnInitializedAsync() => await ReloadAsync();
     private bool CanMergeSelection => _selected.Count > 0 && _items is not null && _items.Where(item => _selected.Contains(item.Review.Id)).All(item => item.Candidates.Count == 1);
+    private bool AllSelected => _items is { Count: > 0 } && _items.All(item => _selected.Contains(item.Review.Id));
     private void SelectItem(int id, MouseEventArgs args)
     {
         if (_items is null) return;
@@ -56,6 +57,14 @@
         _anchorId = id;
     }
     private void ClearSelection() { _selected.Clear(); _anchorId = null; }
+    private void ToggleAll(ChangeEventArgs args)
+    {
+        if (_items is null) return;
+        var select = args.Value is bool value && value;
+        _selected.Clear();
+        if (select) foreach (var item in _items) _selected.Add(item.Review.Id);
+        _anchorId = null;
+    }
     private void ToggleCheckbox(int id, MouseEventArgs args)
     {
         if (!_selected.Add(id)) _selected.Remove(id);
