@@ -237,10 +237,17 @@ img {
 
 /* --- Settings --- */
 .settings-page {
-    max-width: 900px;
+    max-width: none;
     margin: 0 auto;
     padding: 1.5rem;
     animation: fadeInUp 0.35s ease;
+}
+
+@media (min-width: 993px) {
+    .settings-page {
+        width: calc(100vw - 4rem);
+        margin-left: calc((100% - 100vw) / 2 + 2rem);
+    }
 }
 
 .settings-header {
