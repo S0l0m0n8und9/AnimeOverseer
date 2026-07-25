@@ -48,6 +48,17 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         return await Query().FirstOrDefaultAsync(a => a.Id == id);
     }
 
+    public async Task<bool> SetPreferredImageAsync(int animeId, int imageId)
+    {
+        var anime = await db.Animes.FirstOrDefaultAsync(item => item.Id == animeId);
+        var imageExists = await db.AnimeImages.AnyAsync(image => image.Id == imageId && image.AnimeId == animeId);
+        if (anime is null || !imageExists) return false;
+
+        anime.PreferredImageId = imageId;
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     public async Task<List<int>> FetchAndCacheSeasonsAsync(int year, string[] seasons, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
     {
         var syncedIds = new List<int>();

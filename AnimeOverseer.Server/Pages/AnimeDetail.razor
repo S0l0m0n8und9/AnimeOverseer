@@ -73,9 +73,9 @@
         <div class="detail-card">
             <div class="detail-header">
                 <div class="cover-wrapper">
-                    @if (!string.IsNullOrEmpty(anime.LocalImagePath) || !string.IsNullOrEmpty(anime.ImageUrl))
+                    @if (!string.IsNullOrEmpty(anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(anime.DisplayImageUrl))
                     {
-                        <img src="@(anime.LocalImagePath ?? anime.ImageUrl)" alt="@anime.Title cover" class="cover-image" onerror="this.src='/images/placeholder.png'" />
+                        <img src="@(anime.DisplayLocalImagePath ?? anime.DisplayImageUrl)" alt="@anime.Title cover" class="cover-image" onerror="this.src='/images/placeholder.png'" />
                     }
                     else
                     {
@@ -201,19 +201,47 @@
                 </div>
             </div>
 
-            @if (anime.Images.Count > 1)
+            @if (GalleryImages.Count > 0)
             {
-                <div style="margin-top:1rem;border-top:1px solid #29334a;padding-top:.8rem">
-                    <div style="font-size:.8rem;color:#aab5cf;margin-bottom:.5rem">Artwork from connected catalogue sources</div>
-                    <div style="display:flex;gap:.55rem;overflow-x:auto;padding-bottom:.25rem">
-                        @foreach (var image in anime.Images.OrderBy(i => i.Type).ThenBy(i => i.Source))
+                <section class="artwork-gallery">
+                    <div class="artwork-gallery-heading">
+                        <div>
+                            <h2>Artwork</h2>
+                            <p>Choose an image to preview it, then make it the main poster.</p>
+                        </div>
+                        <div class="artwork-gallery-actions">
+                            <button class="btn btn-secondary" @onclick="ExpandPreview" disabled="@(CurrentImage is null)">Expand preview</button>
+                            <button class="btn btn-secondary" @onclick="SetCurrentImageAsPosterAsync" disabled="@(CurrentImage is null || CurrentImage.Id == anime.PreferredImageId || _isSettingPoster)">
+                                @(_isSettingPoster ? "Saving..." : CurrentImage?.Id == anime.PreferredImageId ? "Main poster" : "Set as main poster")
+                            </button>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_posterMessage))
+                    {
+                        <p class="artwork-gallery-message">@_posterMessage</p>
+                    }
+                    @if (CurrentImage is not null)
+                    {
+                        <div class="artwork-preview">
+                            <img src="@(CurrentImage.LocalImagePath ?? CurrentImage.ImageUrl)" alt="Selected @anime.Title @CurrentImage.Type artwork" onerror="this.style.display='none'" />
+                        </div>
+                    }
+                    <div class="artwork-gallery-thumbnails" role="list" aria-label="Anime artwork">
+                        @foreach (var image in GalleryImages)
                         {
-                            <a href="@image.ImageUrl" target="_blank" rel="noopener" title="@image.Source @image.Type" style="flex:0 0 auto">
-                                <img src="@(image.LocalImagePath ?? image.ImageUrl)" alt="@anime.Title @image.Type" style="width:@(image.Type == "Banner" ? "180px" : "64px");height:72px;object-fit:cover;border-radius:5px;border:1px solid #3b4660" />
-                            </a>
+                            <button class="artwork-thumbnail @(image.Id == CurrentImage?.Id ? "selected" : "")"
+                                    @onclick="() => SelectImage(image.Id)"
+                                    title="@image.Source @image.Type"
+                                    aria-label="Show @image.Source @image.Type">
+                                <img src="@(image.LocalImagePath ?? image.ImageUrl)" alt="@anime.Title @image.Type" onerror="this.style.display='none'" />
+                                @if (image.Id == anime.PreferredImageId)
+                                {
+                                    <span class="artwork-main-badge">Main</span>
+                                }
+                            </button>
                         }
                     </div>
-                </div>
+                </section>
             }
 
             @if (!string.IsNullOrEmpty(anime.Synopsis))
@@ -265,6 +293,16 @@
     }
 </div>
 
+@if (_isPreviewExpanded && CurrentImage is not null)
+{
+    <div class="artwork-lightbox" role="dialog" aria-modal="true" aria-label="Expanded artwork preview" @onclick="ClosePreview">
+        <div class="artwork-lightbox-content" @onclick:stopPropagation="true">
+            <button class="artwork-lightbox-close" @onclick="ClosePreview" aria-label="Close expanded preview">&times;</button>
+            <img src="@(CurrentImage.LocalImagePath ?? CurrentImage.ImageUrl)" alt="Expanded @anime?.Title @CurrentImage.Type artwork" />
+        </div>
+    </div>
+}
+
 @if (_showPicker && _pickerResults != null)
 {
     <MediaPickerModal Results="_pickerResults"
@@ -286,6 +324,10 @@
     private List<MediaLookupResult>? _pickerResults;
     private bool _inLibrary;
     private bool _requestToRadarr;
+    private int? _selectedImageId;
+    private bool _isSettingPoster;
+    private string? _posterMessage;
+    private bool _isPreviewExpanded;
 
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
 
@@ -295,6 +337,15 @@
         .ToDictionary(g => g.Key, g => g.ToList())
         ?? new();
 
+    private List<AnimeImage> GalleryImages => anime?.Images
+        .OrderBy(image => image.Type)
+        .ThenBy(image => image.Source)
+        .ToList() ?? [];
+
+    private AnimeImage? CurrentImage => GalleryImages.FirstOrDefault(image => image.Id == _selectedImageId)
+        ?? anime?.PreferredImage
+        ?? GalleryImages.FirstOrDefault();
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -302,8 +353,11 @@
             await MediaLibraryService.EnsureRefreshedAsync();
             anime = await AnimeDataSource.GetByIdAsync(Id);
             if (anime != null)
+            {
+                _selectedImageId = anime.PreferredImageId;
                 _inLibrary = MediaLibraryService.IsInSonarr(anime)
                           || MediaLibraryService.IsInRadarr(anime);
+            }
         }
         catch (Exception ex)
         {
@@ -346,7 +400,10 @@
         {
             anime = await AnimeDataSource.GetByIdAsync(Id, forceRefresh: true);
             if (anime != null)
+            {
+                _selectedImageId = anime.PreferredImageId;
                 _ = LoadRelationsAsync(anime.Id, forceRefresh: true);
+            }
         }
         catch (Exception ex)
         {
@@ -417,6 +474,45 @@
     }
 
     private void goBack() => NavManager.NavigateTo("/");
+
+    private void SelectImage(int imageId)
+    {
+        _selectedImageId = imageId;
+        _posterMessage = null;
+    }
+
+    private void ExpandPreview() => _isPreviewExpanded = true;
+
+    private void ClosePreview() => _isPreviewExpanded = false;
+
+    private async Task SetCurrentImageAsPosterAsync()
+    {
+        if (anime is null || CurrentImage is null) return;
+
+        _isSettingPoster = true;
+        _posterMessage = null;
+        try
+        {
+            if (await AnimeDataSource.SetPreferredImageAsync(anime.Id, CurrentImage.Id))
+            {
+                anime.PreferredImageId = CurrentImage.Id;
+                _posterMessage = "Main poster updated.";
+            }
+            else
+            {
+                _posterMessage = "That artwork is no longer available.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting main poster: {ex.Message}");
+            _posterMessage = "Could not update the main poster.";
+        }
+        finally
+        {
+            _isSettingPoster = false;
+        }
+    }
 
     private string NormalizeStatus(string status) =>
         status.ToLower().Replace(" ", "-").Replace(":", "");

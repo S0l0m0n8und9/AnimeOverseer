@@ -163,4 +163,7 @@ public class KitsuApiService : IAnimeDataSource
 
     public Task<int> GetMostFavoritedCountAsync()
         => Task.FromResult(0);
+
+    public Task<bool> SetPreferredImageAsync(int animeId, int imageId)
+        => Task.FromResult(false);
 }

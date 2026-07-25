@@ -53,6 +53,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<string>("OriginalTitle")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PreferredImageId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal?>("Rating")
                         .HasColumnType("TEXT");
 

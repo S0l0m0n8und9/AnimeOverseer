@@ -14,6 +14,7 @@ namespace AnimeOverseer.Server.Services
         Task<List<string>> GetDemographicNamesAsync();
         Task<List<Anime>> SearchAsync(string query);
         Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false);
+        Task<bool> SetPreferredImageAsync(int animeId, int imageId);
         Task<List<Genre>> GetAllGenresAsync();
         Task<List<Theme>> GetAllThemesAsync();
         Task<List<Demographic>> GetAllDemographicsAsync();

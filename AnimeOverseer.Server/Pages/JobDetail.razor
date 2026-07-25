@@ -110,9 +110,9 @@
                         {
                             <a class="synced-anime-card" href="/anime/@anime.Id" title="@anime.Title">
                                 <div class="synced-anime-image-wrapper">
-                                    @if (!string.IsNullOrEmpty(anime.LocalImagePath) || !string.IsNullOrEmpty(anime.ImageUrl))
+                                    @if (!string.IsNullOrEmpty(anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(anime.DisplayImageUrl))
                                     {
-                                        <img src="@(anime.LocalImagePath ?? anime.ImageUrl)" alt="@anime.Title cover" class="synced-anime-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+                                        <img src="@(anime.DisplayLocalImagePath ?? anime.DisplayImageUrl)" alt="@anime.Title cover" class="synced-anime-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
                                     }
                                     else
                                     {

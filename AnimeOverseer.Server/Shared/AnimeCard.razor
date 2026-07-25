@@ -6,9 +6,9 @@
 
 <div class="anime-card" @onclick="navigateToDetail">
     <div class="card-image-wrapper">
-        @if (!string.IsNullOrEmpty(Anime.LocalImagePath) || !string.IsNullOrEmpty(Anime.ImageUrl))
+        @if (!string.IsNullOrEmpty(Anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(Anime.DisplayImageUrl))
         {
-            <img src="@(Anime.LocalImagePath ?? Anime.ImageUrl)" alt="@Anime.Title cover" class="card-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+            <img src="@(Anime.DisplayLocalImagePath ?? Anime.DisplayImageUrl)" alt="@Anime.Title cover" class="card-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
         }
         else
         {

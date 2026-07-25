@@ -67,6 +67,9 @@ public class Anime
 
     public string? LocalImagePath { get; set; }
 
+    // A user-selected artwork record to use in place of the catalogue's default cover.
+    public int? PreferredImageId { get; set; }
+
     public int SeasonId { get; set; }
     public Season Season { get; set; } = null!;
 
@@ -79,6 +82,17 @@ public class Anime
     public List<Request> Requests { get; set; } = new();
 
     public List<AnimeImage> Images { get; set; } = new();
+
+    [NotMapped]
+    public AnimeImage? PreferredImage => PreferredImageId is int imageId
+        ? Images.FirstOrDefault(image => image.Id == imageId)
+        : null;
+
+    [NotMapped]
+    public string? DisplayImageUrl => PreferredImage?.ImageUrl ?? ImageUrl;
+
+    [NotMapped]
+    public string? DisplayLocalImagePath => PreferredImage?.LocalImagePath ?? LocalImagePath;
 
     [NotMapped]
     public List<AnimeRelation> Relations { get; set; } = new();
