@@ -8,7 +8,9 @@ services:
       - "7273:7273"
     volumes:
       - animeoverseer_db:/app/data
-      - animeoverseer_wwwroot:/app/wwwroot
+      # Persist only generated artwork; mounting all of wwwroot masks CSS and JS
+      # shipped by rebuilt application images.
+      - animeoverseer_image_cache:/app/wwwroot/images/cache
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/animeoverseer.db
@@ -16,4 +18,4 @@ services:
 
 volumes:
   animeoverseer_db:
-  animeoverseer_wwwroot:
+  animeoverseer_image_cache:

@@ -438,6 +438,13 @@ img {
     animation: fadeInUp 0.5s ease;
 }
 
+/* Let the home catalogue extend beyond the shared readable-width wrapper.
+   The page gutters remain consistent with the rest of the application. */
+.dashboard-full-width {
+    width: calc(100vw - 4rem);
+    margin-left: calc((100% - 100vw) / 2 + 2rem);
+}
+
 .controls-bar {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
