@@ -250,6 +250,13 @@ img {
     }
 }
 
+@media (min-width: 1665px) {
+    .settings-page {
+        width: 1600px;
+        margin-left: calc((100% - 1600px) / 2);
+    }
+}
+
 .settings-header {
     margin-bottom: 1.5rem;
 }
@@ -328,6 +335,35 @@ img {
     background: linear-gradient(135deg, var(--accent), var(--accent-hover));
     border-color: rgba(255, 255, 255, 0.15);
     box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+@media (min-width: 1400px) {
+    .settings-page {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        column-gap: 2rem;
+        align-items: start;
+    }
+
+    .settings-header {
+        grid-column: 1 / -1;
+    }
+
+    .settings-tabs {
+        position: sticky;
+        top: 1.5rem;
+        flex-direction: column;
+        margin: 0;
+        overflow: visible;
+    }
+
+    .settings-tab {
+        width: 100%;
+    }
+
+    .settings-content {
+        min-width: 0;
+    }
 }
 
 .settings-page h2 {
