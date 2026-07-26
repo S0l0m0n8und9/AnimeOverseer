@@ -19,3 +19,14 @@
 /AnimeOverseer.Server/wwwroot/_framework/
 *.br
 *.gz
+*.csproj.user
+**/bin/
+**/obj/
+/AnimeOverseer.Server/*.dll
+/AnimeOverseer.Server/*.exe
+/AnimeOverseer.Server/*.pdb
+/AnimeOverseer.Server/*.deps.json
+/AnimeOverseer.Server/*.runtimeconfig.json
+/AnimeOverseer.Server/*.staticwebassets.endpoints.json
+/AnimeOverseer.Server/runtimes/
+/AnimeOverseer.Server/web.config

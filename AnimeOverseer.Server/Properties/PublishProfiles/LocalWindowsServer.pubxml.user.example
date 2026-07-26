@@ -3,5 +3,7 @@
     <!-- Copy this file to LocalWindowsServer.pubxml.user and set your server values. -->
     <DeployServerHost>192.168.1.50</DeployServerHost>
     <DeployServerUser>administrator</DeployServerUser>
+    <PublishDir>C:\Users\YourUser\AppData\Local\AnimeOverseer\publish\</PublishDir>
+    <PublishUrl>C:\Users\YourUser\AppData\Local\AnimeOverseer\publish\</PublishUrl>
   </PropertyGroup>
 </Project>
