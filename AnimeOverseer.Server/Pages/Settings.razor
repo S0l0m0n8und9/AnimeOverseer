@@ -13,6 +13,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject MyAnimeListApiService MyAnimeListApiService
 @inject AnimeScheduleApiService AnimeScheduleApiService
+@inject AnimeReviewService AnimeReviewService
 @implements IDisposable
 
 <PageTitle>Settings - AnimeOverseer</PageTitle>
@@ -43,7 +44,7 @@
         </a>
         <a role="tab" class="settings-tab @TabClass(SettingsTab.Review)" href="@TabUrl(SettingsTab.Review)"
            aria-selected="@(_activeTab == SettingsTab.Review)">
-            Review matches
+            Review matches (@FormatReviewMatchCount())
         </a>
         <a role="tab" class="settings-tab @TabClass(SettingsTab.Library)" href="@TabUrl(SettingsTab.Library)"
            aria-selected="@(_activeTab == SettingsTab.Library)">
@@ -586,6 +587,7 @@
     private IntegrationSchedule? _editingSchedule;
     private bool _restartScheduleOnSave;
     private int _totalJobs;
+    private int _pendingReviewCount;
     private int _jobsPage = 1;
     private int _jobsPerPage = 10;
     private SettingsTab _activeTab = SettingsTab.Sources;
@@ -658,6 +660,7 @@
     {
         if (!firstRender) return;
         await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync(), LoadStorageUsageAsync(), LoadIntegrationSchedulesAsync());
+        await LoadPendingReviewCountAsync();
         StateHasChanged();
         StartPolling();
     }
@@ -712,6 +715,11 @@
 
     private async Task LoadIntegrationSchedulesAsync()
         => _integrationSchedules = await IntegrationScheduleService.GetAllAsync();
+
+    private async Task LoadPendingReviewCountAsync()
+        => _pendingReviewCount = await AnimeReviewService.GetPendingCountAsync();
+
+    private string FormatReviewMatchCount() => _pendingReviewCount > 999 ? "999+" : _pendingReviewCount.ToString();
 
     private int PageCount => Math.Max(1, (int)Math.Ceiling((double)_totalJobs / _jobsPerPage));
 

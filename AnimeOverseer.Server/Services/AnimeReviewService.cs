@@ -7,6 +7,9 @@ namespace AnimeOverseer.Server.Services;
 
 public sealed class AnimeReviewService(AnimeDbContext db, AnimeCacheService cache)
 {
+    public Task<int> GetPendingCountAsync() =>
+        db.PendingAnimeReviews.CountAsync(review => review.Status == "Pending");
+
     public async Task<List<PendingAnimeReviewItem>> GetPendingAsync()
     {
         var reviews = await db.PendingAnimeReviews
