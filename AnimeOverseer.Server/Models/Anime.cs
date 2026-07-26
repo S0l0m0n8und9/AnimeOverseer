@@ -103,6 +103,15 @@ public class Anime
     public List<SourceImage> SourceImages { get; set; } = new();
 }
 
+/// <summary>A persisted AniList recommendation from one locally stored anime to another.</summary>
+public class AnimeRecommendation
+{
+    public int SourceAnimeId { get; set; }
+    public int RecommendedAnimeId { get; set; }
+    public int Rating { get; set; }
+    public DateTime CachedAt { get; set; }
+}
+
 public class AnimeImage
 {
     public int Id { get; set; }

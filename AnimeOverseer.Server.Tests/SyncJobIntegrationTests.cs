@@ -13,6 +13,33 @@ namespace AnimeOverseer.Server.Tests;
 public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
 {
     [Fact]
+    public async Task Recommendation_schedule_queues_a_dedicated_recommendation_job()
+    {
+        await using var db = CreateDb();
+        var schedules = new IntegrationScheduleService(db, new SyncJobTrigger());
+        var start = DateTime.UtcNow.AddMinutes(-2);
+
+        await schedules.SaveAsync(new IntegrationSchedule
+        {
+            Name = "Refresh recommendations",
+            Source = "MyAnimeList", // Recommendation retrieval is always AniList-backed.
+            WorkType = "Recommendations",
+            Enabled = true,
+            StartAt = start,
+            RecurrenceType = "Once"
+        });
+
+        await schedules.QueueDueAsync();
+
+        var schedule = await db.IntegrationSchedules.SingleAsync();
+        var job = await db.SyncJobs.SingleAsync();
+        Assert.Equal("AniList", schedule.Source);
+        Assert.Equal("Recommendations", job.JobType);
+        Assert.Contains("years", job.Parameters);
+        Assert.Contains("seasons", job.Parameters);
+    }
+
+    [Fact]
     public async Task Cancelling_queued_and_running_jobs_preserves_the_correct_job_state()
     {
         await using var db = CreateDb();

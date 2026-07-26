@@ -23,6 +23,7 @@ public class AnimeDbContext : DbContext
     public DbSet<Season> Seasons { get; set; }
     public DbSet<Request> Requests { get; set; }
     public DbSet<CachedAnimeRelation> CachedAnimeRelations { get; set; }
+    public DbSet<AnimeRecommendation> AnimeRecommendations { get; set; }
     public DbSet<AppSetting> AppSettings { get; set; }
     public DbSet<SyncJob> SyncJobs { get; set; }
     public DbSet<SyncJobLog> SyncJobLogs { get; set; }
@@ -78,6 +79,19 @@ public class AnimeDbContext : DbContext
         modelBuilder.Entity<AnimeTitleAlias>()
             .HasIndex(alias => new { alias.AnimeId, alias.Title })
             .IsUnique();
+
+        modelBuilder.Entity<AnimeRecommendation>()
+            .HasKey(recommendation => new { recommendation.SourceAnimeId, recommendation.RecommendedAnimeId });
+        modelBuilder.Entity<AnimeRecommendation>()
+            .HasOne<Anime>()
+            .WithMany()
+            .HasForeignKey(recommendation => recommendation.SourceAnimeId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AnimeRecommendation>()
+            .HasOne<Anime>()
+            .WithMany()
+            .HasForeignKey(recommendation => recommendation.RecommendedAnimeId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<PendingAnimeReview>()
             .HasIndex(review => new { review.Status, review.CreatedAt });

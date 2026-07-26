@@ -124,6 +124,33 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         return result;
     }
 
+    /// <summary>Refreshes the AniList recommendations for a locally stored anime.</summary>
+    public async Task<int> FetchAndStoreRecommendationsAsync(int animeId, CancellationToken ct = default)
+    {
+        var root = await db.Animes.AsNoTracking().FirstOrDefaultAsync(anime => anime.Id == animeId, ct);
+        if (root?.AniListId is not > 0) return 0;
+
+        var remote = await aniList.GetRecommendationsAsync(root.AniListId.Value, ct);
+        var candidates = remote.Select(item => item.Anime).ToList();
+        await UpsertAsync(candidates, root.SeasonId, ct);
+
+        var aniListIds = candidates.Where(anime => anime.AniListId is > 0).Select(anime => anime.AniListId!.Value).ToArray();
+        var saved = await db.Animes.Where(anime => anime.AniListId != null && aniListIds.Contains(anime.AniListId.Value))
+            .Select(anime => new { anime.Id, AniListId = anime.AniListId!.Value }).ToListAsync(ct);
+        var localIds = saved.ToDictionary(anime => anime.AniListId, anime => anime.Id);
+
+        var old = await db.AnimeRecommendations.Where(item => item.SourceAnimeId == root.Id).ToListAsync(ct);
+        db.AnimeRecommendations.RemoveRange(old);
+        var now = DateTime.UtcNow;
+        foreach (var item in remote.GroupBy(item => item.Anime.AniListId).Select(group => group.OrderByDescending(item => item.Rating).First()))
+        {
+            if (item.Anime.AniListId is not int aniListId || !localIds.TryGetValue(aniListId, out var recommendedId) || recommendedId == root.Id) continue;
+            db.AnimeRecommendations.Add(new AnimeRecommendation { SourceAnimeId = root.Id, RecommendedAnimeId = recommendedId, Rating = item.Rating, CachedAt = now });
+        }
+        await db.SaveChangesAsync(ct);
+        return localIds.Count;
+    }
+
     public Task<List<Anime>> GetRecentAsync(int skip, int take) => Query().OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
     public Task<int> GetTotalCountAsync() => db.Animes.CountAsync();
     public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => FilterQueryBuilder.Apply(Query(), state).OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();

@@ -120,6 +120,27 @@ namespace AnimeOverseer.Server.Migrations
                     b.ToTable("AnimeImages");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeRecommendation", b =>
+                {
+                    b.Property<int>("SourceAnimeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RecommendedAnimeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CachedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SourceAnimeId", "RecommendedAnimeId");
+
+                    b.HasIndex("RecommendedAnimeId");
+
+                    b.ToTable("AnimeRecommendations");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeTitleAlias", b =>
                 {
                     b.Property<int>("Id")
@@ -533,6 +554,21 @@ namespace AnimeOverseer.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("Anime");
+                });
+
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeRecommendation", b =>
+                {
+                    b.HasOne("AnimeOverseer.Server.Models.Anime", null)
+                        .WithMany()
+                        .HasForeignKey("RecommendedAnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AnimeOverseer.Server.Models.Anime", null)
+                        .WithMany()
+                        .HasForeignKey("SourceAnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeTitleAlias", b =>

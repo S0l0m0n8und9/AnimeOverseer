@@ -102,8 +102,8 @@
                 </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
                     <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
-                    <label>Source<select class="form-input" style="display:block" @bind="schedule.Source">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
-                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType"><option value="CatalogueSync">Catalogue sync</option><option value="InitialMigration">Initial migration</option></select></label>
+                    <label>Source<select class="form-input" style="display:block" @bind="schedule.Source" @bind:after="() => NormalizeScheduleWorkType(schedule)">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
+                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option><option value="InitialMigration">Initial migration</option>@if (schedule.Source == "AniList") { <option value="Recommendations">Retrieve recommendations</option> }</select></label>
                     <label style="display:flex;gap:.35rem;align-items:center;height:38px"><input type="checkbox" @bind="schedule.Enabled" /> Enabled</label>
                 </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
@@ -126,6 +126,7 @@
                 }
                 <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Work to perform</strong>
                     @if (schedule.WorkType == "InitialMigration") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Imports one selected season at a time and automatically queues the next one until the configured year range is complete.</p> }
+                    @if (schedule.WorkType == "Recommendations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves AniList recommendations for stored AniList anime in the selected years and seasons, then saves the recommendation links.</p> }
                     <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap;margin-top:.45rem">
                         <label>Starting year<input class="form-input" type="number" style="display:block;width:6rem" @bind="schedule.YearOffset" /></label>
                         <span style="color:#aaa;margin-bottom:.55rem">relative to the current year (@(DateTime.UtcNow.Year + schedule.YearOffset))</span>
@@ -163,7 +164,7 @@
                         <div class="integration-schedule-main">
                             <div class="integration-schedule-summary">
                                 <strong>@schedule.Name</strong>@if (schedule.Id != 0 && schedule.Id == _editingSchedule?.Id) { <span class="integration-record-editing-label">Currently editing</span> }
-                                <div class="integration-schedule-meta"><span>@schedule.Source</span><span>@(schedule.WorkType == "InitialMigration" ? "Initial migration" : "Catalogue sync")</span><span>@DescribeSchedule(schedule)</span><span class="integration-schedule-status @(schedule.Enabled ? "is-enabled" : "is-disabled")">@(schedule.Enabled ? "Enabled" : "Disabled")</span></div>
+                                <div class="integration-schedule-meta"><span>@schedule.Source</span><span>@WorkTypeLabel(schedule.WorkType)</span><span>@DescribeSchedule(schedule)</span><span class="integration-schedule-status @(schedule.Enabled ? "is-enabled" : "is-disabled")">@(schedule.Enabled ? "Enabled" : "Disabled")</span></div>
                             </div>
                             <div class="integration-schedule-actions">@if (activeMigration is not null) { <span class="integration-migration-status">@activeMigration.Status #@activeMigration.Id</span><button class="btn btn-secondary" @onclick="() => CancelMigrationAsync(activeMigration.Id)">Cancel migration</button> }<button class="btn btn-secondary" @onclick="() => EditSchedule(schedule)">Edit</button><button class="btn btn-secondary integration-schedule-remove" @onclick="() => DeleteScheduleAsync(schedule.Id)">Remove</button></div>
                         </div>
@@ -840,11 +841,25 @@
 
     private void CancelSchedule() => _editingSchedule = null;
     private static void StartScheduleImmediately(IntegrationSchedule schedule) => schedule.StartAt = DateTime.UtcNow;
+    private static void NormalizeScheduleSource(IntegrationSchedule schedule)
+    {
+        if (schedule.WorkType == "Recommendations") schedule.Source = "AniList";
+    }
+    private static void NormalizeScheduleWorkType(IntegrationSchedule schedule)
+    {
+        if (schedule.Source != "AniList" && schedule.WorkType == "Recommendations") schedule.WorkType = "CatalogueSync";
+    }
+    private static string WorkTypeLabel(string workType) => workType switch
+    {
+        "InitialMigration" => "Initial migration",
+        "Recommendations" => "Recommendations",
+        _ => "Catalogue sync"
+    };
 
     private async Task SaveScheduleAsync()
     {
         if (_editingSchedule is null) return;
-        if (IntegrationScheduleService.SeasonsFor(_editingSchedule).Length == 0)
+        if (_editingSchedule.WorkType != "Recommendations" && IntegrationScheduleService.SeasonsFor(_editingSchedule).Length == 0)
         {
             _integrationMessage = "Choose at least one season for the scheduled job.";
             return;
@@ -930,7 +945,9 @@
         return start == end ? start.ToString() : $"{start}–{end}";
     }
     private static string DescribeSchedule(IntegrationSchedule s)
-        => $"{(s.RecurrenceType == "Once" ? "One-off" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)}")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}";
+        => s.WorkType == "Recommendations"
+            ? $"{(s.RecurrenceType == "Once" ? "One-off recommendation refresh" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)} · recommendations")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}"
+            : $"{(s.RecurrenceType == "Once" ? "One-off" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)}")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}";
 
     private async Task RunQueuedJobsNowAsync()
     {

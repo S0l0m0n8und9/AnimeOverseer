@@ -80,6 +80,19 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             .ToList();
     }
 
+    public async Task<List<(Anime Anime, int Rating)>> GetRecommendationsAsync(int aniListId, CancellationToken ct = default)
+    {
+        var data = await QueryAsync("query ($id: Int!) { Media(id: $id, type: ANIME) { recommendations { edges { node { rating mediaRecommendation { " + MediaFields + " } } } } } }", new { id = aniListId }, ct);
+        return data.GetProperty("Media").GetProperty("recommendations").GetProperty("edges").EnumerateArray()
+            .Where(edge => edge.GetProperty("node").GetProperty("mediaRecommendation").ValueKind != JsonValueKind.Null)
+            .Select(edge =>
+            {
+                var node = edge.GetProperty("node");
+                return (MapFromAniList(node.GetProperty("mediaRecommendation")), GetInt(node, "rating") ?? 0);
+            })
+            .ToList();
+    }
+
     private async Task<JsonElement> QueryAsync(string query, object variables, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl)

@@ -41,7 +41,8 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
         schedule.Name = string.IsNullOrWhiteSpace(input.Name) ? $"{input.Source} schedule" : input.Name.Trim();
         schedule.Source = input.Source;
-        schedule.WorkType = input.WorkType == "InitialMigration" ? "InitialMigration" : "CatalogueSync";
+        schedule.WorkType = input.WorkType is "InitialMigration" or "Recommendations" ? input.WorkType : "CatalogueSync";
+        if (schedule.WorkType == "Recommendations") schedule.Source = "AniList";
         schedule.Enabled = input.Enabled;
         schedule.StartAt = DateTime.SpecifyKind(input.StartAt, DateTimeKind.Utc);
         schedule.RecurrenceType = input.RecurrenceType is "Once" or "Daily" or "Weekly" or "Monthly" or "Yearly" ? input.RecurrenceType : "Daily";
@@ -96,12 +97,20 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
             if (schedule.EndType == "After" && schedule.QueuedOccurrences >= schedule.EndAfterOccurrences) continue;
             var next = ScheduleRecurrence.Next(schedule, schedule.LastQueuedAt ?? schedule.StartAt.AddTicks(-1), 1).FirstOrDefault();
             if (next == default || next > now) continue;
-            // Source work is still serial. A second schedule for the same source waits for its turn.
-            if (await db.SyncJobs.AnyAsync(j => j.JobType == schedule.Source && (j.Status == "Queued" || j.Status == "Running"), ct)) continue;
+            var jobType = schedule.WorkType == "Recommendations" ? "Recommendations" : schedule.Source;
+            // Work remains serial per provider/work type so overlapping schedules do not duplicate it.
+            if (await db.SyncJobs.AnyAsync(j => j.JobType == jobType && (j.Status == "Queued" || j.Status == "Running"), ct)) continue;
 
             var years = YearsFor(schedule, now);
             var seasons = SeasonsFor(schedule);
-            db.SyncJobs.Add(schedule.WorkType == "InitialMigration"
+            db.SyncJobs.Add(schedule.WorkType == "Recommendations"
+                ? new SyncJob
+                {
+                    JobType = jobType,
+                    QueuedAt = now,
+                    Parameters = JsonSerializer.Serialize(new { years, seasons })
+                }
+                : schedule.WorkType == "InitialMigration"
                 ? new SyncJob
                 {
                     JobType = schedule.Source,

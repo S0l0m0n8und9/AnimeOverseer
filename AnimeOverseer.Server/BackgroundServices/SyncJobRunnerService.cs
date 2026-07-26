@@ -90,6 +90,7 @@ public class SyncJobRunnerService(
                 "AniList" => sync.RunJikanSyncAsync(job, jobCts.Token),
                 "MyAnimeList" => sync.RunMyAnimeListSyncAsync(job, jobCts.Token),
                 "AnimeSchedule" => sync.RunAnimeScheduleSyncAsync(job, jobCts.Token),
+                "Recommendations" => sync.RunRecommendationsSyncAsync(job, jobCts.Token),
                 "Kitsu"   => sync.RunKitsuSyncAsync(job, jobCts.Token),
                 _         => Task.CompletedTask
             });

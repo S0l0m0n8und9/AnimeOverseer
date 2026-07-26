@@ -265,6 +265,34 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
     public Task RunAnimeScheduleSyncAsync(SyncJob job, CancellationToken ct)
         => RunSelectedCatalogueSyncAsync(job, "AnimeSchedule", animeSchedule.GetSeasonAsync, ct);
 
+    public async Task RunRecommendationsSyncAsync(SyncJob job, CancellationToken ct)
+    {
+        var (years, seasons) = ParseJikanParams(job.Parameters);
+        var animeIds = await db.Animes.AsNoTracking()
+            .Where(anime => anime.AniListId != null && anime.AniListId > 0 && years.Contains(anime.Season.Year) && seasons.Contains(anime.Season.Name))
+            .OrderBy(anime => anime.Id).Select(anime => anime.Id).ToListAsync(ct);
+        job.TotalCount = animeIds.Count;
+        Log(job, $"AniList recommendation sync started — {job.TotalCount:N0} anime in {seasons.Length} season(s) × {years.Length} year(s)");
+        await db.SaveChangesAsync(ct);
+
+        foreach (var animeId in animeIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var cacheScope = scopeFactory.CreateScope();
+            var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+            await cache.FetchAndStoreRecommendationsAsync(animeId, ct);
+            job.ProcessedCount++;
+            if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
+            {
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}");
+                await db.SaveChangesAsync(ct);
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(700), ct);
+        }
+        Log(job, $"Recommendation sync complete — {job.ProcessedCount:N0} anime processed", "Success");
+        await db.SaveChangesAsync(ct);
+    }
+
     private async Task RunSelectedCatalogueSyncAsync(
         SyncJob job,
         string sourceName,
