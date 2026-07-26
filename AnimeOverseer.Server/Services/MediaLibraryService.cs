@@ -1,5 +1,8 @@
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json.Nodes;
+using System.Text;
+using System.Text.RegularExpressions;
 using AnimeOverseer.Server.Models;
 
 namespace AnimeOverseer.Server.Services;
@@ -23,9 +26,7 @@ public class MediaLibraryService(IServiceScopeFactory scopeFactory, IHttpClientF
             return true;
 
         // Check enhanced matching for variations (like "Title" vs "Title Season 2")
-        var animeTitles = new List<string>();
-        if (!string.IsNullOrWhiteSpace(anime.Title)) animeTitles.Add(anime.Title.Trim());
-        if (!string.IsNullOrWhiteSpace(anime.OriginalTitle)) animeTitles.Add(anime.OriginalTitle.Trim());
+        var animeTitles = GetTitles(anime);
 
         foreach (var sonarrTitle in _sonarrTitles)
         {
@@ -51,9 +52,7 @@ public class MediaLibraryService(IServiceScopeFactory scopeFactory, IHttpClientF
             return true;
 
         // Check enhanced matching for variations (like "Title" vs "Title Season 2")
-        var animeTitles = new List<string>();
-        if (!string.IsNullOrWhiteSpace(anime.Title)) animeTitles.Add(anime.Title.Trim());
-        if (!string.IsNullOrWhiteSpace(anime.OriginalTitle)) animeTitles.Add(anime.OriginalTitle.Trim());
+        var animeTitles = GetTitles(anime);
 
         foreach (var radarrTitle in _radarrTitles)
         {
@@ -68,68 +67,77 @@ public class MediaLibraryService(IServiceScopeFactory scopeFactory, IHttpClientF
     }
 
 
-    private bool TitlesMatch(string title1, string title2)
+    internal static bool TitlesMatch(string title1, string title2)
     {
         if (string.IsNullOrWhiteSpace(title1) || string.IsNullOrWhiteSpace(title2))
             return false;
 
-        var t1 = title1.Trim();
-        var t2 = title2.Trim();
+        var t1 = NormalizeTitle(title1);
+        var t2 = NormalizeTitle(title2);
 
-        // If one contains the other, they might be matches (e.g., "Frieren" vs "Frieren Season 2")
-        if (t1.Contains(t2, StringComparison.OrdinalIgnoreCase) ||
-            t2.Contains(t1, StringComparison.OrdinalIgnoreCase))
+        if (t1 == t2)
+            return true;
+
+        var shorter = t1.Length < t2.Length ? t1 : t2;
+        var longer = t1.Length < t2.Length ? t2 : t1;
+
+        // A title must end at a word boundary and the remaining text must be an
+        // explicit season label. General substring matching made titles such as
+        // "Blue Lock" match unrelated entries beginning with those words.
+        if (longer.StartsWith(shorter, StringComparison.Ordinal) &&
+            longer.Length > shorter.Length &&
+            longer[shorter.Length] == ' ')
         {
-            // Additional check: see if the difference is just season/episode indicators
-            var shorter = t1.Length < t2.Length ? t1 : t2;
-            var longer = t1.Length < t2.Length ? t2 : t1;
-
-            // Check if longer title is just shorter title plus common season indicators
-            var trimmedLonger = longer.Trim();
-            var trimmedShorter = shorter.Trim();
-
-            if (trimmedLonger.StartsWith(trimmedShorter, StringComparison.OrdinalIgnoreCase))
-            {
-                var remainder = trimmedLonger.Substring(trimmedShorter.Length).Trim();
-                // Check if remainder looks like a season indicator
-                if (IsSeasonIndicator(remainder))
-                    return true;
-            }
-
-            // Also check the reverse (though less common)
-            if (trimmedShorter.StartsWith(trimmedLonger, StringComparison.OrdinalIgnoreCase))
-            {
-                var remainder = trimmedShorter.Substring(trimmedLonger.Length).Trim();
-                if (IsSeasonIndicator(remainder))
-                    return true;
-            }
-
-            return true; // Basic contains match
+            return IsSeasonIndicator(longer[(shorter.Length + 1)..]);
         }
 
         return false;
     }
 
-    private bool IsSeasonIndicator(string text)
+    private static IReadOnlyList<string> GetTitles(Anime anime) =>
+        new[] { anime.Title, anime.OriginalTitle }
+            .Concat(anime.AlternativeTitles)
+            .Concat(anime.TitleAliases.Select(alias => alias.Title))
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => title!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static string NormalizeTitle(string title)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
+        var result = new StringBuilder();
+        var previousWasSeparator = true;
 
-        var trimmed = text.Trim();
-
-        // Common season indicators
-        var seasonPatterns = new[]
+        foreach (var character in title.Trim().Normalize(NormalizationForm.FormD))
         {
-            @"season\s*\d+",           // "season 2", "season10"
-            @"\d+nd\s*season",         // "2nd season"
-            @"\d+rd\s*season",         // "3rd season"
-            @"\d+th\s*season",         // "4th season", etc.
-            @"s\d+",                   // "s2", "s10"
-            @"\s*\d+",                 // Just a space and number at end (like "Title 2")
-        };
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+                continue;
 
-        return seasonPatterns.Any(p => System.Text.RegularExpressions.Regex.IsMatch(trimmed, p,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+            // Apostrophes are commonly omitted by Sonarr/Radarr title sources.
+            if (character is '\'' or '\u2018' or '\u2019')
+                continue;
+
+            if (char.IsLetterOrDigit(character))
+            {
+                result.Append(char.ToLowerInvariant(character));
+                previousWasSeparator = false;
+            }
+            else if (!previousWasSeparator)
+            {
+                result.Append(' ');
+                previousWasSeparator = true;
+            }
+        }
+
+        return result.ToString().TrimEnd();
+    }
+
+    private static bool IsSeasonIndicator(string text)
+    {
+        // Deliberately exclude a bare number ("Title 2"): it commonly denotes
+        // a distinct sequel, so treating it as the same library item is unsafe.
+        return Regex.IsMatch(text, @"^(?:season\s*\d+|\d+(?:st|nd|rd|th)\s+season|s\s*\d+)$",
+            RegexOptions.CultureInvariant);
     }
 
     public async Task EnsureRefreshedAsync()
