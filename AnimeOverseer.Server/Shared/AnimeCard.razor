@@ -1,10 +1,10 @@
 @using AnimeOverseer.Server.Models
 @using AnimeOverseer.Server.Services
-@inject NavigationManager NavManager
 @inject MediaRequestService MediaRequestService
 @inject MediaLibraryService MediaLibraryService
 
-<div class="anime-card" @onclick="navigateToDetail">
+<div class="anime-card">
+    <a class="anime-card-link" href="/anime/@Anime.Id" aria-label="View @(Anime.Title ?? Anime.OriginalTitle) details"></a>
     <div class="card-image-wrapper">
         @if (!string.IsNullOrEmpty(Anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(Anime.DisplayImageUrl))
         {
@@ -165,11 +165,6 @@
         {
             _isRequesting = false;
         }
-    }
-
-    private void navigateToDetail()
-    {
-        NavManager.NavigateTo($"/anime/{Anime.Id}");
     }
 
     private string NormalizeStatus(string status)

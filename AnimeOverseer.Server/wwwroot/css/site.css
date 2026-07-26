@@ -1025,6 +1025,20 @@ img {
     position: relative;
 }
 
+.anime-card-link {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+.anime-card > :not(.anime-card-link) {
+    pointer-events: none;
+}
+
+.card-request-btn {
+    pointer-events: auto;
+}
+
 .anime-card:hover {
     transform: translateY(-6px) scale(1.02);
     box-shadow: var(--shadow-glow), var(--shadow-lg);
