@@ -438,6 +438,30 @@
                     </button>
                 </div>
             </div>
+            <details style="margin-bottom:.75rem">
+                <summary style="cursor:pointer;font-size:.9em">Default add options</summary>
+                <p style="font-size:.8em;color:#aaa;margin:.5rem 0">Used whenever a series is added from Anime Overseer. Leave profile and root folder blank to use Sonarr's preferred profile and first configured root folder.</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem">
+                    <label style="font-size:.85em">Quality profile
+                        <select class="form-input" style="width:100%" @bind="_sonarrQualityProfileId">
+                            <option value="">Automatic</option>
+                            @foreach (var profile in _sonarrQualityProfiles) { <option value="@profile.Id">@profile.Name</option> }
+                        </select>
+                    </label>
+                    <label style="font-size:.85em">Root folder<input class="form-input" style="width:100%" @bind="_sonarrRootFolderPath" placeholder="Automatic" /></label>
+                    <label style="font-size:.85em">Series type<select class="form-input" style="width:100%" @bind="_sonarrSeriesType"><option value="anime">Anime</option><option value="standard">Standard</option><option value="daily">Daily</option></select></label>
+                    <label style="font-size:.85em">Monitor<select class="form-input" style="width:100%" @bind="_sonarrMonitor"><option value="all">All episodes</option><option value="future">Future episodes</option><option value="missing">Missing episodes</option><option value="existing">Existing episodes</option><option value="pilot">Pilot only</option><option value="firstSeason">First season</option><option value="latestSeason">Latest season</option><option value="none">None</option></select></label>
+                </div>
+                <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.6rem;font-size:.85em">
+                    <label><input type="checkbox" @bind="_sonarrMonitored" /> Monitor series</label>
+                    <label><input type="checkbox" @bind="_sonarrSearchForMissingEpisodes" /> Search for missing episodes</label>
+                    <label><input type="checkbox" @bind="_sonarrSeasonFolder" /> Use season folders</label>
+                </div>
+                <div style="margin-top:.6rem;font-size:.85em">
+                    <button class="btn btn-secondary" style="font-size:.9em" @onclick="() => LoadQualityProfilesAsync(true)" disabled="@_sonarrProfilesLoading">@(_sonarrProfilesLoading ? "Loading profiles…" : "Load quality profiles")</button>
+                    @if (!string.IsNullOrWhiteSpace(_sonarrProfilesError)) { <span style="color:#f99;margin-left:.5rem">@_sonarrProfilesError</span> }
+                </div>
+            </details>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SaveSonarr" style="font-size:.85em">Save</button>
                 <button class="btn btn-secondary" @onclick="TestSonarr" disabled="@_sonarrTesting" style="font-size:.85em">
@@ -463,6 +487,27 @@
                     </button>
                 </div>
             </div>
+            <details style="margin-bottom:.75rem">
+                <summary style="cursor:pointer;font-size:.9em">Default add options</summary>
+                <p style="font-size:.8em;color:#aaa;margin:.5rem 0">Used whenever a movie is added from Anime Overseer. Leave profile and root folder blank to use Radarr's preferred profile and first configured root folder.</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem">
+                    <label style="font-size:.85em">Quality profile
+                        <select class="form-input" style="width:100%" @bind="_radarrQualityProfileId">
+                            <option value="">Automatic</option>
+                            @foreach (var profile in _radarrQualityProfiles) { <option value="@profile.Id">@profile.Name</option> }
+                        </select>
+                    </label>
+                    <label style="font-size:.85em">Root folder<input class="form-input" style="width:100%" @bind="_radarrRootFolderPath" placeholder="Automatic" /></label>
+                </div>
+                <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.6rem;font-size:.85em">
+                    <label><input type="checkbox" @bind="_radarrMonitored" /> Monitor movie</label>
+                    <label><input type="checkbox" @bind="_radarrSearchForMovie" /> Search for movie</label>
+                </div>
+                <div style="margin-top:.6rem;font-size:.85em">
+                    <button class="btn btn-secondary" style="font-size:.9em" @onclick="() => LoadQualityProfilesAsync(false)" disabled="@_radarrProfilesLoading">@(_radarrProfilesLoading ? "Loading profiles…" : "Load quality profiles")</button>
+                    @if (!string.IsNullOrWhiteSpace(_radarrProfilesError)) { <span style="color:#f99;margin-left:.5rem">@_radarrProfilesError</span> }
+                </div>
+            </details>
             <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-primary" @onclick="SaveRadarr" style="font-size:.85em">Save</button>
                 <button class="btn btn-secondary" @onclick="TestRadarr" disabled="@_radarrTesting" style="font-size:.85em">
@@ -556,6 +601,14 @@
 
     private string _sonarrUrl = "", _sonarrKey = "";
     private string _radarrUrl = "", _radarrKey = "";
+    private string _sonarrQualityProfileId = "", _sonarrRootFolderPath = "", _sonarrSeriesType = "anime", _sonarrMonitor = "all";
+    private string _radarrQualityProfileId = "", _radarrRootFolderPath = "";
+    private bool _sonarrMonitored = true, _sonarrSearchForMissingEpisodes = true, _sonarrSeasonFolder = true;
+    private bool _radarrMonitored = true, _radarrSearchForMovie = true;
+    private List<QualityProfileOption> _sonarrQualityProfiles = [];
+    private List<QualityProfileOption> _radarrQualityProfiles = [];
+    private bool _sonarrProfilesLoading, _radarrProfilesLoading;
+    private string? _sonarrProfilesError, _radarrProfilesError;
     private string _plexUrl = "", _plexToken = "";
     private string _jellyfinUrl = "", _jellyfinKey = "";
     private string _malClientId = "";
@@ -682,6 +735,17 @@
         _sonarrKey   = await SettingsService.GetAsync("sonarr.apikey") ?? "";
         _radarrUrl   = await SettingsService.GetAsync("radarr.url")    ?? "";
         _radarrKey   = await SettingsService.GetAsync("radarr.apikey") ?? "";
+        _sonarrQualityProfileId = await SettingsService.GetAsync("sonarr.qualityProfileId") ?? "";
+        _sonarrRootFolderPath = await SettingsService.GetAsync("sonarr.rootFolderPath") ?? "";
+        _sonarrSeriesType = await SettingsService.GetAsync("sonarr.seriesType") ?? "anime";
+        _sonarrMonitor = await SettingsService.GetAsync("sonarr.monitor") ?? "all";
+        _sonarrMonitored = ReadBool(await SettingsService.GetAsync("sonarr.monitored"), true);
+        _sonarrSearchForMissingEpisodes = ReadBool(await SettingsService.GetAsync("sonarr.searchForMissingEpisodes"), true);
+        _sonarrSeasonFolder = ReadBool(await SettingsService.GetAsync("sonarr.seasonFolder"), true);
+        _radarrQualityProfileId = await SettingsService.GetAsync("radarr.qualityProfileId") ?? "";
+        _radarrRootFolderPath = await SettingsService.GetAsync("radarr.rootFolderPath") ?? "";
+        _radarrMonitored = ReadBool(await SettingsService.GetAsync("radarr.monitored"), true);
+        _radarrSearchForMovie = ReadBool(await SettingsService.GetAsync("radarr.searchForMovie"), true);
         _plexUrl     = await SettingsService.GetAsync("plex.url")      ?? "";
         _plexToken   = await SettingsService.GetAsync("plex.token")    ?? "";
         _jellyfinUrl = await SettingsService.GetAsync("jellyfin.url")  ?? "";
@@ -907,6 +971,13 @@
     {
         await SettingsService.SetAsync("sonarr.url", _sonarrUrl.Trim());
         await SettingsService.SetAsync("sonarr.apikey", _sonarrKey.Trim());
+        await SettingsService.SetAsync("sonarr.qualityProfileId", _sonarrQualityProfileId.Trim());
+        await SettingsService.SetAsync("sonarr.rootFolderPath", _sonarrRootFolderPath.Trim());
+        await SettingsService.SetAsync("sonarr.seriesType", _sonarrSeriesType);
+        await SettingsService.SetAsync("sonarr.monitor", _sonarrMonitor);
+        await SettingsService.SetAsync("sonarr.monitored", _sonarrMonitored.ToString());
+        await SettingsService.SetAsync("sonarr.searchForMissingEpisodes", _sonarrSearchForMissingEpisodes.ToString());
+        await SettingsService.SetAsync("sonarr.seasonFolder", _sonarrSeasonFolder.ToString());
         _sonarrResult = (true, "Saved");
     }
 
@@ -914,6 +985,10 @@
     {
         await SettingsService.SetAsync("radarr.url", _radarrUrl.Trim());
         await SettingsService.SetAsync("radarr.apikey", _radarrKey.Trim());
+        await SettingsService.SetAsync("radarr.qualityProfileId", _radarrQualityProfileId.Trim());
+        await SettingsService.SetAsync("radarr.rootFolderPath", _radarrRootFolderPath.Trim());
+        await SettingsService.SetAsync("radarr.monitored", _radarrMonitored.ToString());
+        await SettingsService.SetAsync("radarr.searchForMovie", _radarrSearchForMovie.ToString());
         _radarrResult = (true, "Saved");
     }
 
@@ -930,6 +1005,58 @@
         await SettingsService.SetAsync("jellyfin.apikey", _jellyfinKey.Trim());
         _jellyfinResult = (true, "Saved");
     }
+
+    private static bool ReadBool(string? value, bool defaultValue) =>
+        bool.TryParse(value, out var parsed) ? parsed : defaultValue;
+
+    private async Task LoadQualityProfilesAsync(bool sonarr)
+    {
+        var url = sonarr ? _sonarrUrl : _radarrUrl;
+        var apiKey = sonarr ? _sonarrKey : _radarrKey;
+
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
+        {
+            SetProfileLoadError(sonarr, "Enter a URL and API key first.");
+            return;
+        }
+
+        SetProfileLoadState(sonarr, true, null);
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.Add("X-Api-Key", apiKey.Trim());
+            var response = await client.GetAsync($"{NormalizeUrl(url)}/api/v3/qualityprofile");
+            if (!response.IsSuccessStatusCode)
+            {
+                SetProfileLoadError(sonarr, $"Could not load profiles (HTTP {(int)response.StatusCode}).");
+                return;
+            }
+
+            var profiles = await response.Content.ReadFromJsonAsync<List<QualityProfileOption>>() ?? [];
+            if (sonarr) _sonarrQualityProfiles = profiles.OrderBy(p => p.Name).ToList();
+            else _radarrQualityProfiles = profiles.OrderBy(p => p.Name).ToList();
+        }
+        catch (Exception ex)
+        {
+            SetProfileLoadError(sonarr, FormatException(ex));
+        }
+        finally
+        {
+            if (sonarr) _sonarrProfilesLoading = false;
+            else _radarrProfilesLoading = false;
+        }
+    }
+
+    private void SetProfileLoadState(bool sonarr, bool loading, string? error)
+    {
+        if (sonarr) { _sonarrProfilesLoading = loading; _sonarrProfilesError = error; }
+        else { _radarrProfilesLoading = loading; _radarrProfilesError = error; }
+    }
+
+    private void SetProfileLoadError(bool sonarr, string error) => SetProfileLoadState(sonarr, false, error);
+
+    private sealed record QualityProfileOption(int Id, string Name);
 
     private async Task SaveMyAnimeList()
     {

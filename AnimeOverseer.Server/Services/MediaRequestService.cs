@@ -108,20 +108,21 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (series["id"]?.GetValue<int>() > 0)
             return (false, "Already exists in Sonarr");
 
-        var profileId = await GetFirstProfileIdAsync(client, url);
+        var profileId = await GetProfileIdAsync(client, url, "sonarr.qualityProfileId");
         if (profileId == null) return (false, "No quality profiles found in Sonarr");
 
-        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        var rootFolder = await GetRootFolderAsync(client, url, "sonarr.rootFolderPath");
         if (rootFolder == null) return (false, "No root folders found in Sonarr");
 
         series["qualityProfileId"] = profileId.Value;
-        series["seriesType"] = "anime";
+        series["seriesType"] = await GetStringSettingAsync("sonarr.seriesType", "anime");
         series["rootFolderPath"] = rootFolder;
-        series["monitored"] = true;
+        series["monitored"] = await GetBoolSettingAsync("sonarr.monitored", true);
+        series["seasonFolder"] = await GetBoolSettingAsync("sonarr.seasonFolder", true);
         series["addOptions"] = new JsonObject
         {
-            ["monitor"] = "all",
-            ["searchForMissingEpisodes"] = true
+            ["monitor"] = await GetStringSettingAsync("sonarr.monitor", "all"),
+            ["searchForMissingEpisodes"] = await GetBoolSettingAsync("sonarr.searchForMissingEpisodes", true)
         };
 
         var addResp = await client.PostAsJsonAsync($"{url}/api/v3/series", series);
@@ -146,18 +147,18 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (movie["id"]?.GetValue<int>() > 0)
             return (false, "Already exists in Radarr");
 
-        var profileId = await GetFirstProfileIdAsync(client, url);
+        var profileId = await GetProfileIdAsync(client, url, "radarr.qualityProfileId");
         if (profileId == null) return (false, "No quality profiles found in Radarr");
 
-        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        var rootFolder = await GetRootFolderAsync(client, url, "radarr.rootFolderPath");
         if (rootFolder == null) return (false, "No root folders found in Radarr");
 
         movie["qualityProfileId"] = profileId.Value;
         movie["rootFolderPath"] = rootFolder;
-        movie["monitored"] = true;
+        movie["monitored"] = await GetBoolSettingAsync("radarr.monitored", true);
         movie["addOptions"] = new JsonObject
         {
-            ["searchForMovie"] = true
+            ["searchForMovie"] = await GetBoolSettingAsync("radarr.searchForMovie", true)
         };
 
         var addResp = await client.PostAsJsonAsync($"{url}/api/v3/movie", movie);
@@ -191,20 +192,21 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (series["id"]?.GetValue<int>() > 0)
             return (false, "Already exists in Sonarr");
 
-        var profileId = await GetFirstProfileIdAsync(client, url);
+        var profileId = await GetProfileIdAsync(client, url, "sonarr.qualityProfileId");
         if (profileId == null) return (false, "No quality profiles found in Sonarr");
 
-        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        var rootFolder = await GetRootFolderAsync(client, url, "sonarr.rootFolderPath");
         if (rootFolder == null) return (false, "No root folders found in Sonarr");
 
         series["qualityProfileId"] = profileId.Value;
-        series["seriesType"] = "anime";
+        series["seriesType"] = await GetStringSettingAsync("sonarr.seriesType", "anime");
         series["rootFolderPath"] = rootFolder;
-        series["monitored"] = true;
+        series["monitored"] = await GetBoolSettingAsync("sonarr.monitored", true);
+        series["seasonFolder"] = await GetBoolSettingAsync("sonarr.seasonFolder", true);
         series["addOptions"] = new JsonObject
         {
-            ["monitor"] = "all",
-            ["searchForMissingEpisodes"] = true
+            ["monitor"] = await GetStringSettingAsync("sonarr.monitor", "all"),
+            ["searchForMissingEpisodes"] = await GetBoolSettingAsync("sonarr.searchForMissingEpisodes", true)
         };
 
         var addResp = await client.PostAsJsonAsync($"{url}/api/v3/series", series);
@@ -238,18 +240,18 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (movie["id"]?.GetValue<int>() > 0)
             return (false, "Already exists in Radarr");
 
-        var profileId = await GetFirstProfileIdAsync(client, url);
+        var profileId = await GetProfileIdAsync(client, url, "radarr.qualityProfileId");
         if (profileId == null) return (false, "No quality profiles found in Radarr");
 
-        var rootFolder = await GetFirstRootFolderAsync(client, url);
+        var rootFolder = await GetRootFolderAsync(client, url, "radarr.rootFolderPath");
         if (rootFolder == null) return (false, "No root folders found in Radarr");
 
         movie["qualityProfileId"] = profileId.Value;
         movie["rootFolderPath"] = rootFolder;
-        movie["monitored"] = true;
+        movie["monitored"] = await GetBoolSettingAsync("radarr.monitored", true);
         movie["addOptions"] = new JsonObject
         {
-            ["searchForMovie"] = true
+            ["searchForMovie"] = await GetBoolSettingAsync("radarr.searchForMovie", true)
         };
 
         var addResp = await client.PostAsJsonAsync($"{url}/api/v3/movie", movie);
@@ -280,6 +282,34 @@ public class MediaRequestService(SettingsService settings, IHttpClientFactory ht
         if (!resp.IsSuccessStatusCode) return null;
         var arr = await resp.Content.ReadFromJsonAsync<JsonArray>();
         return arr?.Count > 0 ? arr[0]!["path"]?.GetValue<string>() : null;
+    }
+
+    private async Task<int?> GetProfileIdAsync(HttpClient client, string baseUrl, string settingKey)
+    {
+        var configured = await settings.GetAsync(settingKey);
+        return int.TryParse(configured, out var profileId) && profileId > 0
+            ? profileId
+            : await GetFirstProfileIdAsync(client, baseUrl);
+    }
+
+    private async Task<string?> GetRootFolderAsync(HttpClient client, string baseUrl, string settingKey)
+    {
+        var configured = await settings.GetAsync(settingKey);
+        return string.IsNullOrWhiteSpace(configured)
+            ? await GetFirstRootFolderAsync(client, baseUrl)
+            : configured.Trim();
+    }
+
+    private async Task<string> GetStringSettingAsync(string key, string defaultValue)
+    {
+        var value = await settings.GetAsync(key);
+        return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
+    }
+
+    private async Task<bool> GetBoolSettingAsync(string key, bool defaultValue)
+    {
+        var value = await settings.GetAsync(key);
+        return bool.TryParse(value, out var result) ? result : defaultValue;
     }
 
     private static string NormalizeUrl(string url)
