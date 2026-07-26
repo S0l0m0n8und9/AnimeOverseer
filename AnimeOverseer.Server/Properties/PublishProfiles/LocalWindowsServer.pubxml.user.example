@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Copy this file to LocalWindowsServer.pubxml.user and set your server values. -->
+    <DeployServerHost>192.168.1.50</DeployServerHost>
+    <DeployServerUser>administrator</DeployServerUser>
+  </PropertyGroup>
+</Project>

@@ -2,18 +2,19 @@ version: '3.8'
 
 services:
   animeoverseer:
+    image: animeoverseer:${APP_VERSION:-latest}
     build: .
     ports:
       - "7272:7272"
       - "7273:7273"
     volumes:
       - animeoverseer_db:/app/data
-      - animeoverseer_wwwroot:/app/wwwroot
+      - animeoverseer_image_cache:/app/wwwroot/images/cache
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/animeoverseer.db
       - ASPNETCORE_URLS=http://+:7272
 
 volumes:
   animeoverseer_db:
-  animeoverseer_wwwroot:
+  animeoverseer_image_cache:

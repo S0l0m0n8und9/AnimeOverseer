@@ -1,0 +1,19 @@
+# Source-control and IDE metadata
+.git
+.vs
+.claude
+.agents
+
+# Build output and test artifacts
+**/bin
+**/obj
+**/TestResults
+AnimeOverseer.Server.Tests
+
+# Runtime-only data. These are supplied by Docker volumes in deployment.
+AnimeOverseer.Server/animeoverseer*.db
+AnimeOverseer.Server/*.zip
+AnimeOverseer.Server/wwwroot/images/cache
+AnimeOverseer.Server/wwwroot/_framework
+**/*.br
+**/*.gz

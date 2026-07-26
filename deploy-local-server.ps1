@@ -1,0 +1,79 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$ServerHost,
+
+    [Parameter(Mandatory)]
+    [string]$ServerUser,
+
+    [string]$RemoteDeployPath = 'C:\AnimeOverseer',
+
+    [string]$ImageRepository = 'animeoverseer',
+
+    [string]$ImageTag
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Invoke-Checked {
+    param([scriptblock]$Command, [string]$Description)
+
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed with exit code $LASTEXITCODE."
+    }
+}
+
+$repositoryRoot = $PSScriptRoot
+$dockerPath = (Get-Command docker -ErrorAction SilentlyContinue).Source
+if (-not $dockerPath) {
+    $dockerDesktopCli = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+    if (Test-Path -LiteralPath $dockerDesktopCli) {
+        $dockerPath = $dockerDesktopCli
+    }
+}
+
+if (-not $dockerPath) {
+    throw 'Docker CLI was not found. Install Docker Desktop or add docker.exe to PATH.'
+}
+
+$imageTag = if ($ImageTag) {
+    $ImageTag
+} else {
+    $commit = (& git -C $repositoryRoot rev-parse --short HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0) { $commit = 'local' }
+    "{0}-{1}" -f (Get-Date -Format 'yyyyMMddHHmmss'), $commit.Trim()
+}
+
+$image = "${ImageRepository}:${imageTag}"
+$archivePath = Join-Path ([System.IO.Path]::GetTempPath()) "${ImageRepository}-${imageTag}.tar"
+$destination = "${ServerUser}@${ServerHost}"
+$remoteArchivePath = Join-Path $RemoteDeployPath 'animeoverseer.tar'
+$composeFile = Join-Path $repositoryRoot 'docker-compose.yml'
+
+try {
+    Write-Host "Building $image for Linux containers..."
+    Invoke-Checked { & $dockerPath buildx build --platform linux/amd64 --tag $image --load $repositoryRoot } 'Docker image build'
+
+    Write-Host 'Saving image archive...'
+    Invoke-Checked { & $dockerPath save --output $archivePath $image } 'Docker image export'
+
+    # The OpenSSH server on Windows uses PowerShell to create the deployment directory.
+    $createDirectoryCommand = "New-Item -ItemType Directory -Force -Path '$RemoteDeployPath'"
+    Invoke-Checked { ssh $destination powershell -NoProfile -Command $createDirectoryCommand } 'Remote deployment-directory creation'
+
+    Write-Host 'Copying image and Compose file to the server...'
+    Invoke-Checked { scp $archivePath "${destination}:$remoteArchivePath" } 'Image archive copy'
+    Invoke-Checked { scp $composeFile "${destination}:$RemoteDeployPath/docker-compose.yml" } 'Compose file copy'
+
+    $remoteCommand = "`$ErrorActionPreference = 'Stop'; docker load --input '$remoteArchivePath'; Set-Location '$RemoteDeployPath'; `$env:APP_VERSION = '$imageTag'; docker compose up --detach --no-build --remove-orphans; Remove-Item -Force '$remoteArchivePath'"
+    Write-Host 'Loading the image and restarting the service...'
+    Invoke-Checked { ssh $destination powershell -NoProfile -Command $remoteCommand } 'Remote deployment'
+
+    Write-Host "Deployment complete: $image"
+}
+finally {
+    if (Test-Path -LiteralPath $archivePath) {
+        Remove-Item -LiteralPath $archivePath -Force
+    }
+}

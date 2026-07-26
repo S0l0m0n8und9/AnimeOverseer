@@ -15,3 +15,7 @@
 /AnimeOverseer.Server/animeoverseer.before-lock-fix.db
 /AnimeOverseer.Server.Tests/bin/Debug/net10.0
 /AnimeOverseer.Server.Tests/obj
+/AnimeOverseer.Server/Properties/PublishProfiles/*.pubxml.user
+/AnimeOverseer.Server/wwwroot/_framework/
+*.br
+*.gz

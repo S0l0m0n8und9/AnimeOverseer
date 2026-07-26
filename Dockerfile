@@ -32,6 +32,11 @@ FROM build AS publish
 RUN dotnet publish "AnimeOverseer.Server.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+ARG UID=10001
 WORKDIR /app
+USER root
 COPY --from=publish /app/publish .
+RUN mkdir -p /app/data /app/wwwroot/images/cache \
+    && chown -R ${UID}:${UID} /app/data /app/wwwroot
+USER appuser
 ENTRYPOINT ["dotnet", "AnimeOverseer.Server.dll"]
