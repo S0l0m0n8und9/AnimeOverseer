@@ -45,12 +45,34 @@
            aria-selected="@(_activeTab == SettingsTab.Review)">
             Review matches
         </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Library)" href="@TabUrl(SettingsTab.Library)"
+           aria-selected="@(_activeTab == SettingsTab.Library)">
+            Library
+        </a>
     </div>
 
     <div class="settings-content">
     @if (_activeTab == SettingsTab.Review)
     {
         <AnimeReview />
+    }
+
+    @if (_activeTab == SettingsTab.Library)
+    {
+    <h2>Library filters</h2>
+    <section class="settings-card" style="max-width:56rem">
+        <h3>NSFW quick filter</h3>
+        <p style="color:#aaa;margin-top:0">The dashboard’s <em>Show NSFW</em> option matches these tags exactly. Use one genre or theme per line; saved lists replace the defaults.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem">
+            <label>NSFW genres
+                <textarea class="form-input" rows="8" style="display:block;width:100%;margin-top:.35rem" @bind="_nsfwGenres"></textarea>
+            </label>
+            <label>NSFW themes
+                <textarea class="form-input" rows="8" style="display:block;width:100%;margin-top:.35rem" @bind="_nsfwThemes"></textarea>
+            </label>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center;margin-top:1rem"><button class="btn btn-primary" @onclick="SaveNsfwFiltersAsync">Save NSFW filters</button><button class="btn btn-secondary" @onclick="RestoreNsfwDefaultsAsync">Restore defaults</button>@if (_nsfwResult is not null) { @TestResultBadge(_nsfwResult) }</div>
+    </section>
     }
 
     @if (_activeTab == SettingsTab.Sources)
@@ -506,7 +528,7 @@
 </div>
 
 @code {
-    private enum SettingsTab { Sources, Servers, History, Storage, Review }
+    private enum SettingsTab { Sources, Servers, History, Storage, Review, Library }
 
     [Parameter, SupplyParameterFromQuery(Name = "tab")]
     public string? Tab { get; set; }
@@ -538,8 +560,9 @@
     private string _jellyfinUrl = "", _jellyfinKey = "";
     private string _malClientId = "";
     private string _animeScheduleApplicationToken = "";
+    private string _nsfwGenres = "", _nsfwThemes = "";
     private bool _malSaving, _animeScheduleSaving;
-    private (bool Ok, string Msg)? _malResult, _animeScheduleResult;
+    private (bool Ok, string Msg)? _malResult, _animeScheduleResult, _nsfwResult;
 
     private bool _sonarrTesting, _radarrTesting, _plexTesting, _jellyfinTesting;
     private (bool Ok, string Msg)? _sonarrResult, _radarrResult, _plexResult, _jellyfinResult;
@@ -559,6 +582,7 @@
         SettingsTab.History => "/settings?tab=history",
         SettingsTab.Storage => "/settings?tab=storage",
         SettingsTab.Review => "/settings?tab=review",
+        SettingsTab.Library => "/settings?tab=library",
         _ => "/settings"
     };
 
@@ -572,6 +596,7 @@
             "history" => SettingsTab.History,
             "storage" => SettingsTab.Storage,
             "review" => SettingsTab.Review,
+            "library" => SettingsTab.Library,
             _ => SettingsTab.Sources
         };
     }
@@ -663,6 +688,10 @@
         _jellyfinKey = await SettingsService.GetAsync("jellyfin.apikey") ?? "";
         _malClientId = await SettingsService.GetAsync("myanimelist.clientId") ?? "";
         _animeScheduleApplicationToken = await SettingsService.GetAsync("animeschedule.applicationToken") ?? "";
+        _nsfwGenres = NsfwFilterSettings.ToLines(NsfwFilterSettings.Read(
+            await SettingsService.GetAsync(NsfwFilterSettings.GenreSettingKey), NsfwFilterSettings.DefaultGenres));
+        _nsfwThemes = NsfwFilterSettings.ToLines(NsfwFilterSettings.Read(
+            await SettingsService.GetAsync(NsfwFilterSettings.ThemeSettingKey), NsfwFilterSettings.DefaultThemes));
     }
 
     private async Task LoadStorageUsageAsync()
@@ -928,6 +957,25 @@
         }
         catch (Exception ex) { _animeScheduleResult = (false, FormatException(ex)); }
         finally { _animeScheduleSaving = false; }
+    }
+
+    private async Task SaveNsfwFiltersAsync()
+    {
+        var genres = NsfwFilterSettings.FromLines(_nsfwGenres);
+        var themes = NsfwFilterSettings.FromLines(_nsfwThemes);
+        await SettingsService.SetAsync(NsfwFilterSettings.GenreSettingKey, JsonSerializer.Serialize(genres));
+        await SettingsService.SetAsync(NsfwFilterSettings.ThemeSettingKey, JsonSerializer.Serialize(themes));
+        _nsfwGenres = NsfwFilterSettings.ToLines(genres);
+        _nsfwThemes = NsfwFilterSettings.ToLines(themes);
+        _nsfwResult = (true, "Saved");
+    }
+
+    private async Task RestoreNsfwDefaultsAsync()
+    {
+        _nsfwGenres = NsfwFilterSettings.ToLines(NsfwFilterSettings.DefaultGenres);
+        _nsfwThemes = NsfwFilterSettings.ToLines(NsfwFilterSettings.DefaultThemes);
+        await SaveNsfwFiltersAsync();
+        _nsfwResult = (true, "Defaults restored");
     }
 
     // ── Connection tests ──────────────────────────────────────────────────

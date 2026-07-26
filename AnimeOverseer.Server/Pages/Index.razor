@@ -6,6 +6,7 @@
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager NavManager
 @inject MediaLibraryService MediaLibraryService
+@inject SettingsService SettingsService
 @implements IDisposable
 
 <PageTitle>AnimeOverseer - Dashboard</PageTitle>
@@ -38,6 +39,10 @@
                 <input type="checkbox" checked="@hideInLibrary" @onchange="ToggleHideInLibrary" />
                 Hide in library
             </label>
+            <label class="quick-filter" title="Include anime marked with an NSFW genre or theme">
+                <input type="checkbox" checked="@showNsfw" @onchange="ToggleShowNsfw" />
+                Show NSFW
+            </label>
         </div>
 
         <FilterBuilder State="filterState" OnChanged="OnFilterChanged"
@@ -52,7 +57,7 @@
         {
             <span>@DisplayedAnimes.Count result@(DisplayedAnimes.Count != 1 ? "s" : "") for "@searchQuery"</span>
         }
-        else if (filterState.IsActive || hideInLibrary)
+        else if (filterState.IsActive || hideInLibrary || HasNsfwFilter)
         {
             <span>@DisplayedAnimes.Count of @allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") shown (@totalCount total)</span>
         }
@@ -75,7 +80,7 @@
             <span class="empty-icon">&#x1F3AC;</span>
             <h3>No anime found</h3>
             <p>
-                @if ((filterState.IsActive || hideInLibrary) && allAnimes.Count > 0)
+                @if ((filterState.IsActive || hideInLibrary || HasNsfwFilter) && allAnimes.Count > 0)
                 {
                     <text>No anime match the active filters. Try adjusting or clearing them.</text>
                 }
@@ -130,12 +135,16 @@
     private bool isLoadingMore = false;
     private bool _ownNavigation = false;
     private bool hideInLibrary;
+    private bool showNsfw;
+    private List<string> nsfwGenres = [];
+    private List<string> nsfwThemes = [];
 
     private List<Anime> DisplayedAnimes => SortEngine.Apply(
             (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery) && !HasLibraryFilter
                 ? allAnimes
                 : FilterEngine.Apply(allAnimes, filterState, IsInLibrary))
             .Where(anime => !hideInLibrary || !IsInLibrary(anime))
+            .Where(anime => showNsfw || !IsNsfw(anime))
             .ToList(),
         sortState, IsInLibrary);
 
@@ -143,8 +152,12 @@
         .SelectMany(g => g.Conditions)
         .Any(c => c.Field == FilterField.InLibrary && FilterState.IsActiveCondition(c));
 
+    private bool HasNsfwFilter => !showNsfw;
+
     private bool IsInLibrary(Anime anime) =>
         MediaLibraryService.IsInSonarr(anime) || MediaLibraryService.IsInRadarr(anime);
+
+    private bool IsNsfw(Anime anime) => NsfwFilterSettings.Matches(anime, nsfwGenres, nsfwThemes);
 
     private List<string> AvailableGenres { get; set; } = [];
     private List<string> AvailableThemes { get; set; } = [];
@@ -156,7 +169,7 @@
     {
         NavManager.LocationChanged += OnLocationChanged;
         await RestoreFromUrl(NavManager.Uri);
-        await Task.WhenAll(LoadTagsAsync(), MediaLibraryService.EnsureRefreshedAsync());
+        await Task.WhenAll(LoadTagsAsync(), LoadNsfwFiltersAsync(), MediaLibraryService.EnsureRefreshedAsync());
     }
 
     public void Dispose()
@@ -184,6 +197,7 @@
         pageSize    = qs.TryGetValue("pageSize", out var ps) && int.TryParse(ps, out var psi) ? psi : 100;
         searchQuery = qs.GetValueOrDefault("q", string.Empty);
         hideInLibrary = qs.TryGetValue("hideInLibrary", out var hide) && hide == "1";
+        showNsfw = qs.TryGetValue("showNsfw", out var show) && show == "1";
         filterState = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
@@ -217,6 +231,8 @@
             parts.Add($"q={Uri.EscapeDataString(searchQuery)}");
         if (hideInLibrary)
             parts.Add("hideInLibrary=1");
+        if (showNsfw)
+            parts.Add("showNsfw=1");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
         if (sortState.IsActive)
@@ -400,9 +416,26 @@
             await LoadRecent();
     }
 
+    private async Task LoadNsfwFiltersAsync()
+    {
+        nsfwGenres = NsfwFilterSettings.Read(
+            await SettingsService.GetAsync(NsfwFilterSettings.GenreSettingKey),
+            NsfwFilterSettings.DefaultGenres);
+        nsfwThemes = NsfwFilterSettings.Read(
+            await SettingsService.GetAsync(NsfwFilterSettings.ThemeSettingKey),
+            NsfwFilterSettings.DefaultThemes);
+    }
+
     private void ToggleHideInLibrary(ChangeEventArgs e)
     {
         hideInLibrary = e.Value is bool value && value;
+        PushUrl(replace: true);
+        StateHasChanged();
+    }
+
+    private void ToggleShowNsfw(ChangeEventArgs e)
+    {
+        showNsfw = e.Value is bool value && value;
         PushUrl(replace: true);
         StateHasChanged();
     }
