@@ -8,6 +8,13 @@ namespace AnimeOverseer.Server.Services;
 public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService> logger)
 {
     private const string ApiUrl = "https://graphql.anilist.co";
+    // AniList's public API limit can be reduced without notice. Leave headroom below
+    // 30 requests/minute and coordinate every typed-client instance in this process.
+    private static readonly TimeSpan MinimumRequestInterval = TimeSpan.FromMilliseconds(2250);
+    private static readonly TimeSpan DefaultRateLimitDelay = TimeSpan.FromSeconds(60);
+    private const int MaxRequestAttempts = 5;
+    private static readonly SemaphoreSlim RequestGate = new(1, 1);
+    private static DateTimeOffset nextRequestAt = DateTimeOffset.MinValue;
     private const string MediaFields = @"
         id idMal title { romaji english native } synonyms
         coverImage { large } bannerImage description(asHtml: false) format episodes duration status
@@ -28,7 +35,6 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             result.AddRange(animes);
             if (onPageFetched != null) await onPageFetched(page, animes.Count);
             if (!pageData.GetProperty("pageInfo").GetProperty("hasNextPage").GetBoolean()) break;
-            await Task.Delay(TimeSpan.FromSeconds(2), ct); // stays below the current degraded public limit
         }
         return result;
     }
@@ -47,7 +53,6 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             result.AddRange(animes);
             if (onPageFetched != null) await onPageFetched(page, animes.Count);
             if (!pageData.GetProperty("pageInfo").GetProperty("hasNextPage").GetBoolean()) break;
-            await Task.Delay(TimeSpan.FromSeconds(2), ct);
         }
         return result;
     }
@@ -95,16 +100,80 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
 
     private async Task<JsonElement> QueryAsync(string query, object variables, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl)
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= MaxRequestAttempts; attempt++)
         {
-            Content = new StringContent(JsonSerializer.Serialize(new { query, variables }), Encoding.UTF8, "application/json")
-        };
-        using var response = await httpClient.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"AniList returned {(int)response.StatusCode}: {body}", null, response.StatusCode);
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("errors", out var errors)) throw new HttpRequestException($"AniList GraphQL error: {errors}");
-        return doc.RootElement.GetProperty("data").Clone();
+            await WaitForRequestSlotAsync(ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { query, variables }), Encoding.UTF8, "application/json")
+            };
+            using var response = await httpClient.SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (response.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("errors", out var errors))
+                    throw new HttpRequestException($"AniList GraphQL error: {errors}");
+                return doc.RootElement.GetProperty("data").Clone();
+            }
+
+            var error = new HttpRequestException($"AniList returned {(int)response.StatusCode}: {body}", null, response.StatusCode);
+            if (!IsTransient(response.StatusCode) || attempt == MaxRequestAttempts)
+                throw error;
+
+            var delay = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                ? RetryDelay(response)
+                : TimeSpan.FromSeconds(Math.Pow(2, attempt));
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                await PauseRequestsAsync(delay, ct);
+
+            lastError = error;
+            logger.LogWarning(error, "AniList request failed (attempt {Attempt}/{MaxAttempts}); retrying in {Delay}",
+                attempt, MaxRequestAttempts, delay);
+            await Task.Delay(delay, ct);
+        }
+
+        throw new HttpRequestException($"AniList request failed after {MaxRequestAttempts} attempts.", lastError);
+    }
+
+    private static bool IsTransient(System.Net.HttpStatusCode statusCode)
+        => statusCode == System.Net.HttpStatusCode.TooManyRequests || (int)statusCode >= StatusCodes.Status500InternalServerError;
+
+    private static TimeSpan RetryDelay(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is TimeSpan delta && delta > TimeSpan.Zero) return delta;
+        if (retryAfter?.Date is DateTimeOffset date)
+        {
+            var remaining = date - DateTimeOffset.UtcNow;
+            if (remaining > TimeSpan.Zero) return remaining;
+        }
+        return DefaultRateLimitDelay;
+    }
+
+    private static async Task WaitForRequestSlotAsync(CancellationToken ct)
+    {
+        await RequestGate.WaitAsync(ct);
+        try
+        {
+            var delay = nextRequestAt - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
+            nextRequestAt = DateTimeOffset.UtcNow + MinimumRequestInterval;
+        }
+        finally { RequestGate.Release(); }
+    }
+
+    private static async Task PauseRequestsAsync(TimeSpan delay, CancellationToken ct)
+    {
+        await RequestGate.WaitAsync(ct);
+        try
+        {
+            var retryAt = DateTimeOffset.UtcNow + delay;
+            if (retryAt > nextRequestAt) nextRequestAt = retryAt;
+        }
+        finally { RequestGate.Release(); }
     }
 
     internal static Anime MapFromAniList(JsonElement element)

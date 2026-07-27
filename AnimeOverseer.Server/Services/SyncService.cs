@@ -144,7 +144,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 await db.SaveChangesAsync(ct);
             }
 
-            await Task.Delay(700, ct); // ~85 req/min, under AniList rate limit
+            // AniListApiService coordinates the global request rate and retries 429s.
         }
 
         job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
@@ -287,7 +287,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}");
                 await db.SaveChangesAsync(ct);
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(700), ct);
+            // AniListApiService coordinates the global request rate and retries 429s.
         }
         Log(job, $"Recommendation sync complete — {job.ProcessedCount:N0} anime processed", "Success");
         await db.SaveChangesAsync(ct);
