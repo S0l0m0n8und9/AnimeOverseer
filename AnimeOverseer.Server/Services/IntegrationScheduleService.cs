@@ -41,7 +41,8 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
         schedule.Name = string.IsNullOrWhiteSpace(input.Name) ? $"{input.Source} schedule" : input.Name.Trim();
         schedule.Source = input.Source;
-        schedule.WorkType = input.WorkType is "InitialMigration" or "Recommendations" or "Relations" ? input.WorkType : "CatalogueSync";
+        schedule.WorkType = input.WorkType is "Recommendations" or "Relations" ? input.WorkType : "CatalogueSync";
+        schedule.ProcessOneSeasonAtATime = input.ProcessOneSeasonAtATime;
         if (schedule.WorkType is "Recommendations" or "Relations") schedule.Source = "AniList";
         schedule.Enabled = input.Enabled;
         schedule.StartAt = DateTime.SpecifyKind(input.StartAt, DateTimeKind.Utc);
@@ -58,9 +59,9 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
         schedule.YearOffset = Math.Clamp(input.YearOffset, -100, 100);
         schedule.YearCount = Math.Clamp(input.YearCount, 1, 100);
         schedule.SeasonsJson = NormalizeSeasons(input.SeasonsJson);
-        // A migration schedule starts one chained import; it should not restart the
-        // range on every recurrence unless the user deliberately creates another one.
-        if (schedule.WorkType == "InitialMigration" && schedule.EndType == "Never")
+        // A chained range starts one sequence; it should not restart the range on
+        // every recurrence unless the user deliberately creates another one.
+        if (schedule.ProcessOneSeasonAtATime && schedule.EndType == "Never")
         {
             schedule.EndType = "After";
             schedule.EndAfterOccurrences = 1;
@@ -103,33 +104,17 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
             var years = YearsFor(schedule, now);
             var seasons = SeasonsFor(schedule);
-            db.SyncJobs.Add(schedule.WorkType is "Recommendations" or "Relations"
-                ? new SyncJob
+            var parameters = schedule.ProcessOneSeasonAtATime
+                ? JsonSerializer.Serialize(new
                 {
-                    JobType = jobType,
-                    QueuedAt = now,
-                    Parameters = JsonSerializer.Serialize(new { years, seasons })
-                }
-                : schedule.WorkType == "InitialMigration"
-                ? new SyncJob
-                {
-                    JobType = schedule.Source,
-                    QueuedAt = now,
-                    Parameters = JsonSerializer.Serialize(new
-                    {
-                        initialImport = true,
-                        initialImportEndYear = years[^1],
-                        initialImportSeasons = seasons,
-                        years = new[] { years[0] },
-                        seasons = new[] { seasons[0] }
-                    })
-                }
-                : new SyncJob
-                {
-                    JobType = schedule.Source,
-                    QueuedAt = now,
-                    Parameters = JsonSerializer.Serialize(new { years, seasons })
-                });
+                    processOneSeasonAtATime = true,
+                    batchYears = years,
+                    batchSeasons = seasons,
+                    years = new[] { years[0] },
+                    seasons = new[] { seasons[0] }
+                })
+                : JsonSerializer.Serialize(new { years, seasons });
+            db.SyncJobs.Add(new SyncJob { JobType = jobType, QueuedAt = now, Parameters = parameters });
             schedule.LastQueuedAt = now;
             schedule.QueuedOccurrences++;
             queuedAny = true;

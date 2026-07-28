@@ -234,6 +234,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("ProcessOneSeasonAtATime")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("DayOfMonth")
                         .HasColumnType("INTEGER");
 

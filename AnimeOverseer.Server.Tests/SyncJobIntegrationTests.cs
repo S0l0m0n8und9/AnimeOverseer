@@ -59,6 +59,36 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
     }
 
     [Fact]
+    public async Task One_season_at_a_time_option_chains_any_job_type()
+    {
+        await using var db = CreateDb();
+        var schedules = new IntegrationScheduleService(db, new SyncJobTrigger());
+        await schedules.SaveAsync(new IntegrationSchedule
+        {
+            Name = "Refresh recommendations in parts", Source = "AniList", WorkType = "Recommendations",
+            ProcessOneSeasonAtATime = true, Enabled = true, StartAt = DateTime.UtcNow.AddMinutes(-2),
+            RecurrenceType = "Once", YearOffset = 0, YearCount = 2, SeasonsJson = "[\"winter\",\"spring\"]"
+        });
+
+        await schedules.QueueDueAsync();
+        var first = await db.SyncJobs.SingleAsync();
+        Assert.Equal("Recommendations", first.JobType);
+        Assert.Contains("processOneSeasonAtATime", first.Parameters);
+        Assert.Contains("\"years\":[2026]", first.Parameters);
+        Assert.Contains("\"seasons\":[\"winter\"]", first.Parameters);
+
+        first.Status = "Completed";
+        await db.SaveChangesAsync();
+        var jobs = new SyncJobService(db, new SyncJobTrigger());
+        await jobs.QueueNextPartAsync(first);
+
+        var next = await db.SyncJobs.OrderBy(job => job.Id).LastAsync();
+        Assert.Equal("Recommendations", next.JobType);
+        Assert.Contains("\"years\":[2026]", next.Parameters);
+        Assert.Contains("\"seasons\":[\"spring\"]", next.Parameters);
+    }
+
+    [Fact]
     public async Task Cancelling_queued_and_running_jobs_preserves_the_correct_job_state()
     {
         await using var db = CreateDb();

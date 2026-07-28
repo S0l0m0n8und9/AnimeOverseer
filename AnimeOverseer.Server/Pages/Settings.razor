@@ -103,7 +103,7 @@
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
                     <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
                     <label>Source<select class="form-input" style="display:block" @bind="schedule.Source" @bind:after="() => NormalizeScheduleWorkType(schedule)">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
-                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option><option value="InitialMigration">Initial migration</option>@if (schedule.Source == "AniList") { <option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
+                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option>@if (schedule.Source == "AniList") { <option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
                     <label style="display:flex;gap:.35rem;align-items:center;height:38px"><input type="checkbox" @bind="schedule.Enabled" /> Enabled</label>
                 </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
@@ -125,7 +125,7 @@
                     </div>
                 }
                 <div style="border-top:1px solid #333;padding-top:.75rem"><strong>Work to perform</strong>
-                    @if (schedule.WorkType == "InitialMigration") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Imports one selected season at a time and automatically queues the next one until the configured year range is complete.</p> }
+                    @if (schedule.ProcessOneSeasonAtATime) { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Runs one selected season at a time and automatically queues the next one until the configured range is complete.</p> }
                     @if (schedule.WorkType == "Recommendations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves AniList recommendations for stored AniList anime in the selected years and seasons, then saves the recommendation links.</p> }
                     @if (schedule.WorkType == "Relations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves franchise relationships from AniList and Jikan for stored anime in the selected years and seasons, then saves the local related-anime links.</p> }
                     <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap;margin-top:.45rem">
@@ -135,6 +135,7 @@
                         <span style="color:#aaa;margin-bottom:.55rem">(@YearScopeText(schedule))</span>
                     </div>
                     <div style="margin-top:.45rem"><span style="color:#aaa">Seasons: </span>@foreach (var season in SeasonOptions) { <label style="margin-left:.6rem"><input type="checkbox" checked="@ScheduleHasSeason(schedule, season)" @onchange="e => ToggleScheduleSeason(schedule, season, (bool)e.Value!)" /> @Capitalize(season)</label> } <button type="button" class="btn btn-secondary" style="font-size:.8em;padding:.15rem .4rem;margin-left:.6rem" @onclick="() => UseRemainingSeasons(schedule)">Use remaining current-year seasons</button></div>
+                    <label style="display:block;margin-top:.6rem;color:#ddd"><input type="checkbox" @bind="schedule.ProcessOneSeasonAtATime" /> Process one season at a time (initial migration)</label>
                 </div>
                 @if (schedule.RecurrenceType != "Once")
                 {
@@ -160,7 +161,7 @@
             <div class="integration-schedule-list">
                 @foreach (var schedule in _integrationSchedules)
                 {
-                    var activeMigration = schedule.WorkType == "InitialMigration" ? ActiveMigrationFor(schedule.Source) : null;
+                    var activeMigration = schedule.ProcessOneSeasonAtATime ? ActiveMigrationFor(schedule.Source) : null;
                     <article class="integration-schedule-record @(schedule.Id != 0 && schedule.Id == _editingSchedule?.Id ? "is-editing" : "")">
                         <div class="integration-schedule-main">
                             <div class="integration-schedule-summary">
@@ -263,6 +264,7 @@
                             }
                         </div>
                     </div>
+                    <label style="display:block;font-size:.82em;margin:-.25rem 0 .75rem"><input type="checkbox" @bind="_processOneSeasonAtATime" /> Process one season at a time (initial migration)</label>
                 }
 
                 <button class="btn btn-primary" style="font-size:.85em;padding:.3rem .8rem"
@@ -601,6 +603,7 @@
 
     private HashSet<int> _jikanYears = new() { DateTime.UtcNow.Year };
     private HashSet<string> _jikanSeasons = new(["spring", "summer", "fall", "winter"]);
+    private bool _processOneSeasonAtATime;
     private string _jikanCustomYear = "";
 
     private string _sonarrUrl = "", _sonarrKey = "";
@@ -804,11 +807,13 @@
         {
             string? parameters = null;
             if (jobType is "AniList" or "MyAnimeList" or "AnimeSchedule")
-                parameters = JsonSerializer.Serialize(new
-                {
-                    years = _jikanYears.OrderBy(y => y),
-                    seasons = _jikanSeasons.OrderBy(s => s)
-                });
+            {
+                var years = _jikanYears.OrderBy(y => y).ToArray();
+                var seasons = _jikanSeasons.OrderBy(s => s).ToArray();
+                parameters = _processOneSeasonAtATime
+                    ? JsonSerializer.Serialize(new { processOneSeasonAtATime = true, batchYears = years, batchSeasons = seasons, years = new[] { years[0] }, seasons = new[] { seasons[0] } })
+                    : JsonSerializer.Serialize(new { years, seasons });
+            }
 
             await SyncJobService.QueueAsync(jobType, parameters);
             await LoadJobsAsync();
@@ -852,7 +857,6 @@
     }
     private static string WorkTypeLabel(string workType) => workType switch
     {
-        "InitialMigration" => "Initial migration",
         "Recommendations" => "Recommendations",
         "Relations" => "Related anime",
         _ => "Catalogue sync"
@@ -887,7 +891,8 @@
         try
         {
             using var document = JsonDocument.Parse(job.Parameters);
-            return document.RootElement.TryGetProperty("initialImport", out var initialImport) && initialImport.GetBoolean();
+            return (document.RootElement.TryGetProperty("initialImport", out var initialImport) && initialImport.GetBoolean())
+                || (document.RootElement.TryGetProperty("processOneSeasonAtATime", out var processOneAtATime) && processOneAtATime.GetBoolean());
         }
         catch (JsonException) { return false; }
     }

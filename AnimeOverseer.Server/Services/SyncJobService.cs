@@ -8,8 +8,6 @@ namespace AnimeOverseer.Server.Services;
 
 public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
 {
-    private static readonly string[] ImportSeasons = ["winter", "spring", "summer", "fall"];
-
     public async Task<SyncJob?> QueueAsync(string jobType, string? parameters = null)
     {
         var alreadyActive = await db.SyncJobs.AnyAsync(j =>
@@ -45,53 +43,52 @@ public class SyncJobService(AnimeDbContext db, SyncJobTrigger syncJobTrigger)
         return job;
     }
 
-    /// <summary>
-    /// Starts a historical catalogue import. A job contains only one season; completion
-    /// queues the following season so imports remain serial and inherit API throttling.
-    /// </summary>
-    public async Task<SyncJob?> QueueInitialImportAsync(string source)
-    {
-        if (await db.SyncJobs.AnyAsync(j => j.JobType == source && (j.Status == "Queued" || j.Status == "Running"))) return null;
-        return await QueueInitialImportPartAsync(source, 1960, ImportSeasons[0]);
-    }
-
-    public async Task QueueNextInitialImportAsync(SyncJob completedJob)
+    /// <summary>Queues the next unit of a job configured to process its range serially.</summary>
+    public async Task QueueNextPartAsync(SyncJob completedJob)
     {
         if (completedJob.Status != "Completed" || string.IsNullOrWhiteSpace(completedJob.Parameters)) return;
         try
         {
             using var document = JsonDocument.Parse(completedJob.Parameters);
-            if (!document.RootElement.TryGetProperty("initialImport", out var initial) || !initial.GetBoolean()) return;
+            var legacyInitialImport = document.RootElement.TryGetProperty("initialImport", out var initial) && initial.GetBoolean();
+            var processOneAtATime = document.RootElement.TryGetProperty("processOneSeasonAtATime", out var option) && option.GetBoolean();
+            if (!legacyInitialImport && !processOneAtATime) return;
             var year = document.RootElement.GetProperty("years").EnumerateArray().Single().GetInt32();
             var season = document.RootElement.GetProperty("seasons").EnumerateArray().Single().GetString();
-            var importSeasons = document.RootElement.TryGetProperty("initialImportSeasons", out var configuredSeasons)
+            var seasons = document.RootElement.TryGetProperty("batchSeasons", out var batchSeasons)
+                ? batchSeasons.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Cast<string>().ToArray()
+                : document.RootElement.TryGetProperty("initialImportSeasons", out var configuredSeasons)
                 ? configuredSeasons.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Cast<string>().ToArray()
-                : ImportSeasons;
-            var seasonIndex = Array.IndexOf(importSeasons, season);
-            if (seasonIndex < 0) return;
-            var nextYear = seasonIndex == importSeasons.Length - 1 ? year + 1 : year;
-            var nextSeason = importSeasons[(seasonIndex + 1) % importSeasons.Length];
-            var endYear = document.RootElement.TryGetProperty("initialImportEndYear", out var configuredEndYear)
-                ? configuredEndYear.GetInt32()
-                : DateTime.UtcNow.Year + 1;
-            if (nextYear > endYear) return;
-            await QueueInitialImportPartAsync(completedJob.JobType, nextYear, nextSeason, endYear, importSeasons);
+                : [];
+            var years = document.RootElement.TryGetProperty("batchYears", out var batchYears)
+                ? batchYears.EnumerateArray().Select(x => x.GetInt32()).ToArray()
+                : legacyInitialImport && document.RootElement.TryGetProperty("initialImportEndYear", out var configuredEndYear)
+                    ? Enumerable.Range(year, configuredEndYear.GetInt32() - year + 1).ToArray()
+                    : [];
+            if (seasons.Length == 0 || years.Length == 0) return;
+            var seasonIndex = Array.IndexOf(seasons, season);
+            var yearIndex = Array.IndexOf(years, year);
+            if (seasonIndex < 0 || yearIndex < 0) return;
+            var nextYearIndex = seasonIndex == seasons.Length - 1 ? yearIndex + 1 : yearIndex;
+            if (nextYearIndex >= years.Length) return;
+            var nextSeason = seasons[(seasonIndex + 1) % seasons.Length];
+            await QueuePartAsync(completedJob.JobType, years[nextYearIndex], nextSeason, years, seasons);
         }
         catch (JsonException) { }
         catch (InvalidOperationException) { }
     }
 
-    private async Task<SyncJob> QueueInitialImportPartAsync(string source, int year, string season, int? endYear = null, string[]? importSeasons = null)
+    public async Task<SyncJob> QueuePartAsync(string jobType, int year, string season, int[] years, string[] seasons)
     {
         var job = new SyncJob
         {
-            JobType = source,
+            JobType = jobType,
             QueuedAt = DateTime.UtcNow,
             Parameters = JsonSerializer.Serialize(new
             {
-                initialImport = true,
-                initialImportEndYear = endYear ?? DateTime.UtcNow.Year + 1,
-                initialImportSeasons = importSeasons ?? ImportSeasons,
+                processOneSeasonAtATime = true,
+                batchYears = years,
+                batchSeasons = seasons,
                 years = new[] { year },
                 seasons = new[] { season }
             })
