@@ -268,6 +268,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
     public async Task RunRecommendationsSyncAsync(SyncJob job, CancellationToken ct)
     {
         var (years, seasons) = ParseJikanParams(job.Parameters);
+        var syncedIds = GetSyncedIds(job);
         var animeIds = await db.Animes.AsNoTracking()
             .Where(anime => anime.AniListId != null && anime.AniListId > 0 && years.Contains(anime.Season.Year) && seasons.Contains(anime.Season.Name))
             .OrderBy(anime => anime.Id).Select(anime => anime.Id).ToListAsync(ct);
@@ -281,12 +282,13 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             using var cacheScope = scopeFactory.CreateScope();
             var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
             await cache.FetchAndStoreRecommendationsAsync(animeId, ct);
+            syncedIds.Add(animeId);
+            job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
             job.ProcessedCount++;
             if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
-            {
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}");
-                await db.SaveChangesAsync(ct);
-            }
+            // Save every successful source ID so history remains accurate after a cancellation or failure.
+            await db.SaveChangesAsync(ct);
             // AniListApiService coordinates the global request rate and retries 429s.
         }
         Log(job, $"Recommendation sync complete — {job.ProcessedCount:N0} anime processed", "Success");
