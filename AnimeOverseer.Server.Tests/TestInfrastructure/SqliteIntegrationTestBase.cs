@@ -34,8 +34,9 @@ public abstract class SqliteIntegrationTestBase : IDisposable
     {
         var client = new HttpClient(handler ?? new FailingHandler());
         var aniList = new AniListApiService(client, NullLogger<AniListApiService>.Instance);
+        var jikan = new JikanApiService(client, NullLogger<JikanApiService>.Instance);
         var imageCache = new ImageCacheService(new TestHttpClientFactory(client), new TestWebHostEnvironment());
-        return new AnimeCacheService(db, aniList, imageCache);
+        return new AnimeCacheService(db, aniList, jikan, imageCache);
     }
 
     protected static Anime Incoming(int aniListId, string title, bool english, List<string>? aliases = null, List<SourceImage>? images = null)

@@ -8,6 +8,8 @@ public class AnimeRelation
     public string RelationType { get; set; } = string.Empty; // Prequel, Sequel, Side Story, etc.
     public int AnimeId { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+    public string? LocalImagePath { get; set; }
 }
 
 public class CachedAnimeRelation
@@ -98,6 +100,9 @@ public class Anime
 
     [NotMapped]
     public List<AnimeRelation> Relations { get; set; } = new();
+
+    [NotMapped]
+    public List<AnimeRelation> RelatedAnime { get; set; } = new();
 
     [NotMapped]
     public List<SourceImage> SourceImages { get; set; } = new();

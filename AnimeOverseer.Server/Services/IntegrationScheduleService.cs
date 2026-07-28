@@ -41,8 +41,8 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
         schedule.Name = string.IsNullOrWhiteSpace(input.Name) ? $"{input.Source} schedule" : input.Name.Trim();
         schedule.Source = input.Source;
-        schedule.WorkType = input.WorkType is "InitialMigration" or "Recommendations" ? input.WorkType : "CatalogueSync";
-        if (schedule.WorkType == "Recommendations") schedule.Source = "AniList";
+        schedule.WorkType = input.WorkType is "InitialMigration" or "Recommendations" or "Relations" ? input.WorkType : "CatalogueSync";
+        if (schedule.WorkType is "Recommendations" or "Relations") schedule.Source = "AniList";
         schedule.Enabled = input.Enabled;
         schedule.StartAt = DateTime.SpecifyKind(input.StartAt, DateTimeKind.Utc);
         schedule.RecurrenceType = input.RecurrenceType is "Once" or "Daily" or "Weekly" or "Monthly" or "Yearly" ? input.RecurrenceType : "Daily";
@@ -97,13 +97,13 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
             if (schedule.EndType == "After" && schedule.QueuedOccurrences >= schedule.EndAfterOccurrences) continue;
             var next = ScheduleRecurrence.Next(schedule, schedule.LastQueuedAt ?? schedule.StartAt.AddTicks(-1), 1).FirstOrDefault();
             if (next == default || next > now) continue;
-            var jobType = schedule.WorkType == "Recommendations" ? "Recommendations" : schedule.Source;
+            var jobType = schedule.WorkType switch { "Recommendations" => "Recommendations", "Relations" => "Relations", _ => schedule.Source };
             // Work remains serial per provider/work type so overlapping schedules do not duplicate it.
             if (await db.SyncJobs.AnyAsync(j => j.JobType == jobType && (j.Status == "Queued" || j.Status == "Running"), ct)) continue;
 
             var years = YearsFor(schedule, now);
             var seasons = SeasonsFor(schedule);
-            db.SyncJobs.Add(schedule.WorkType == "Recommendations"
+            db.SyncJobs.Add(schedule.WorkType is "Recommendations" or "Relations"
                 ? new SyncJob
                 {
                     JobType = jobType,

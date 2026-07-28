@@ -220,10 +220,11 @@
 
             @if (GalleryImages.Count > 0)
             {
-                <section class="artwork-gallery">
+                <details class="detail-collapsible artwork-gallery">
+                    <summary>Artwork (@GalleryImages.Count)</summary>
+                    <div class="detail-collapsible-content">
                     <div class="artwork-gallery-heading">
                         <div>
-                            <h2>Artwork</h2>
                             <p>Choose an image to preview it, then make it the main poster.</p>
                         </div>
                         <div class="artwork-gallery-actions">
@@ -258,7 +259,8 @@
                             </button>
                         }
                     </div>
-                </section>
+                    </div>
+                </details>
             }
 
             @if (!string.IsNullOrEmpty(anime.Synopsis))
@@ -271,8 +273,9 @@
 
             @if (isLoadingRecommendations || Recommendations.Count > 0)
             {
-                <div class="relations-section">
-                    <h2>Recommendations</h2>
+                <details class="detail-collapsible relations-section">
+                    <summary>Recommendations (@Recommendations.Count)</summary>
+                    <div class="detail-collapsible-content">
                     @if (isLoadingRecommendations)
                     {
                         <div class="relations-loading">
@@ -282,14 +285,46 @@
                     }
                     else
                     {
-                        <div class="relation-entries">
+                        <div class="synced-anime-grid recommendation-grid">
                             @foreach (var recommendation in Recommendations)
                             {
-                                <a href="/anime/@recommendation.AnimeId" class="relation-entry">@recommendation.Name</a>
+                                <a class="synced-anime-card" href="/anime/@recommendation.AnimeId" title="@recommendation.Name">
+                                    <div class="synced-anime-image-wrapper">
+                                        @if (!string.IsNullOrEmpty(recommendation.LocalImagePath) || !string.IsNullOrEmpty(recommendation.ImageUrl))
+                                        {
+                                            <img src="@(recommendation.LocalImagePath ?? recommendation.ImageUrl)" alt="@recommendation.Name cover" class="synced-anime-image" onerror="this.src='/images/placeholder.png'; this.onerror=null;" />
+                                        }
+                                        else { <div class="synced-anime-placeholder">&#x1F3AC;</div> }
+                                    </div>
+                                    <span class="synced-anime-title">@recommendation.Name</span>
+                                </a>
                             }
                         </div>
                     }
-                </div>
+                    </div>
+                </details>
+            }
+
+            @if (isLoadingRelatedAnime || RelatedAnimeGroups.Count > 0)
+            {
+                <details class="detail-collapsible relations-section">
+                    <summary>Related Anime (@(anime?.RelatedAnime.Count ?? 0))</summary>
+                    <div class="detail-collapsible-content">
+                    @if (isLoadingRelatedAnime)
+                    {
+                        <div class="relations-loading"><span class="spinner-small"></span><span>Loading cached related anime...</span></div>
+                    }
+                    else
+                    {
+                        @foreach (var group in RelatedAnimeGroups)
+                        {
+                            <div class="relation-group"><span class="relation-type">@group.Key</span><div class="relation-entries">
+                                @foreach (var relatedAnime in group.Value) { <a href="/anime/@relatedAnime.AnimeId" class="relation-entry">@relatedAnime.Name</a> }
+                            </div></div>
+                        }
+                    }
+                    </div>
+                </details>
             }
         </div>
     }
@@ -329,6 +364,7 @@
     private bool isLoading = true;
     private bool isRefreshing = false;
     private bool isLoadingRecommendations = false;
+    private bool isLoadingRelatedAnime = false;
     private bool _isRequesting = false;
     private (bool Ok, string Msg)? _requestResult;
     private bool _showPicker;
@@ -342,6 +378,11 @@
     private string _customEnglishTitle = string.Empty;
 
     private List<AnimeRelation> Recommendations => anime?.Relations ?? [];
+    private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
+    private Dictionary<string, List<AnimeRelation>> RelatedAnimeGroups => anime?.RelatedAnime
+        .GroupBy(item => item.RelationType)
+        .OrderBy(group => Array.IndexOf(RelationOrder, group.Key) is var index && index >= 0 ? index : 99)
+        .ToDictionary(group => group.Key, group => group.ToList()) ?? new();
 
     private List<AnimeImage> GalleryImages => anime?.Images
         .OrderBy(image => image.Type)
@@ -400,7 +441,10 @@
         }
 
         if (anime != null)
+        {
             _ = LoadRecommendationsAsync(anime.Id);
+            _ = LoadRelatedAnimeAsync(anime.Id);
+        }
     }
 
     private async Task LoadRecommendationsAsync(int animeId)
@@ -434,6 +478,7 @@
             {
                 _selectedImageId = anime.PreferredImageId;
                 _ = LoadRecommendationsAsync(anime.Id);
+                _ = LoadRelatedAnimeAsync(anime.Id);
             }
         }
         catch (Exception ex)
@@ -542,6 +587,23 @@
         finally
         {
             _isSettingPoster = false;
+        }
+    }
+
+    private async Task LoadRelatedAnimeAsync(int animeId)
+    {
+        isLoadingRelatedAnime = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var relatedAnime = await AnimeDataSource.GetRelatedAnimeAsync(animeId);
+            if (anime != null) anime.RelatedAnime = relatedAnime;
+        }
+        catch (Exception ex) { Console.WriteLine($"Error loading related anime: {ex.Message}"); }
+        finally
+        {
+            isLoadingRelatedAnime = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

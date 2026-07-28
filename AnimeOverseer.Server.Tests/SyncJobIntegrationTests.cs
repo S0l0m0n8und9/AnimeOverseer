@@ -40,6 +40,25 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
     }
 
     [Fact]
+    public async Task Related_anime_schedule_queues_a_dedicated_relations_job()
+    {
+        await using var db = CreateDb();
+        var schedules = new IntegrationScheduleService(db, new SyncJobTrigger());
+        await schedules.SaveAsync(new IntegrationSchedule
+        {
+            Name = "Refresh related anime", Source = "AniList", WorkType = "Relations", Enabled = true,
+            StartAt = DateTime.UtcNow.AddMinutes(-2), RecurrenceType = "Once"
+        });
+
+        await schedules.QueueDueAsync();
+
+        var schedule = await db.IntegrationSchedules.SingleAsync();
+        var job = await db.SyncJobs.SingleAsync();
+        Assert.Equal("AniList", schedule.Source);
+        Assert.Equal("Relations", job.JobType);
+    }
+
+    [Fact]
     public async Task Cancelling_queued_and_running_jobs_preserves_the_correct_job_state()
     {
         await using var db = CreateDb();
@@ -202,6 +221,7 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         services.AddScoped<HttpClient>();
         services.AddScoped<SettingsService>();
         services.AddScoped<AniListApiService>(service => new AniListApiService(cacheHandler is null ? new HttpClient() : new HttpClient(cacheHandler), NullLogger<AniListApiService>.Instance));
+        services.AddScoped<JikanApiService>(service => new JikanApiService(cacheHandler is null ? new HttpClient() : new HttpClient(cacheHandler), NullLogger<JikanApiService>.Instance));
         services.AddScoped<MyAnimeListApiService>();
         services.AddScoped<AnimeScheduleApiService>();
         services.AddScoped<KitsuApiService>(service => new KitsuApiService(new HttpClient()));

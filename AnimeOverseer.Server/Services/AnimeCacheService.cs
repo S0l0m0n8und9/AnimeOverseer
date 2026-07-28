@@ -8,7 +8,7 @@ using System.Text.Json;
 namespace AnimeOverseer.Server.Services;
 
 /// <summary>The database is the catalogue identity boundary; provider IDs are optional metadata.</summary>
-public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, ImageCacheService imageCache) : IAnimeDataSource
+public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, JikanApiService jikan, ImageCacheService imageCache) : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
     private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.Images).Include(a => a.TitleAliases).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
@@ -112,9 +112,81 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
             select new AnimeRelation
             {
                 AnimeId = recommendedAnime.Id,
-                Name = recommendedAnime.Title
+                Name = recommendedAnime.Title,
+                ImageUrl = recommendedAnime.ImageUrl,
+                LocalImagePath = recommendedAnime.LocalImagePath
             })
             .ToListAsync();
+
+    /// <summary>Returns locally cached relationship links from the AniList and Jikan relation sync.</summary>
+    public async Task<List<AnimeRelation>> GetRelatedAnimeAsync(int animeId)
+    {
+        var rootMalId = await db.Animes.Where(anime => anime.Id == animeId).Select(anime => anime.MALId).FirstOrDefaultAsync();
+        if (rootMalId is not > 0) return [];
+        return await (from relation in db.CachedAnimeRelations.AsNoTracking()
+                      join relatedAnime in db.Animes.AsNoTracking() on relation.RelatedMalId equals relatedAnime.MALId
+                      where relation.RootMalId == rootMalId.Value
+                      orderby relation.RelationType, relatedAnime.Title
+                      select new AnimeRelation { AnimeId = relatedAnime.Id, Name = relatedAnime.Title, RelationType = relation.RelationType })
+            .ToListAsync();
+    }
+
+    /// <summary>Refreshes locally displayable franchise links using AniList and Jikan.</summary>
+    public async Task<int> FetchAndStoreRelationsAsync(int animeId, CancellationToken ct = default)
+    {
+        var root = await db.Animes.AsNoTracking().FirstOrDefaultAsync(anime => anime.Id == animeId, ct);
+        if (root?.AniListId is not > 0 || root.MALId is not > 0) return 0;
+
+        var aniListRelations = await aniList.GetRelationsAsync(root.AniListId.Value, ct);
+        await UpsertAsync(aniListRelations.Select(item => item.Anime).ToList(), root.SeasonId, ct);
+        var jikanRelations = await jikan.GetRelationsAsync(root.MALId.Value);
+
+        var relatedAniListIds = aniListRelations.Select(item => item.Anime.AniListId).Where(id => id is > 0).Select(id => id!.Value).ToArray();
+        var relatedMalIds = jikanRelations.Select(item => item.AnimeId)
+            .Concat(aniListRelations.Select(item => item.Anime.MALId).Where(id => id is > 0).Select(id => id!.Value))
+            .Distinct().ToArray();
+        var local = await db.Animes.AsNoTracking()
+            .Where(anime => (anime.AniListId != null && relatedAniListIds.Contains(anime.AniListId.Value)) || (anime.MALId != null && relatedMalIds.Contains(anime.MALId.Value)))
+            .Select(anime => new { anime.MALId, anime.AniListId, anime.Title }).ToListAsync(ct);
+
+        var old = await db.CachedAnimeRelations.Where(item => item.RootMalId == root.MALId.Value).ToListAsync(ct);
+        db.CachedAnimeRelations.RemoveRange(old);
+        var links = new HashSet<(int MalId, string Type)>();
+        void AddLink(int? malId, string relationType, string name)
+        {
+            relationType = NormalizeRelationType(relationType);
+            if (malId is not > 0 || malId == root.MALId || !links.Add((malId.Value, relationType))) return;
+            db.CachedAnimeRelations.Add(new CachedAnimeRelation { RootMalId = root.MALId.Value, RelatedMalId = malId.Value, RelationType = relationType, Name = name, CachedAt = DateTime.UtcNow });
+        }
+        foreach (var relation in aniListRelations)
+        {
+            var saved = local.FirstOrDefault(item => item.AniListId == relation.Anime.AniListId);
+            AddLink(saved?.MALId, relation.RelationType, saved?.Title ?? relation.Anime.Title);
+        }
+        foreach (var relation in jikanRelations)
+        {
+            var saved = local.FirstOrDefault(item => item.MALId == relation.AnimeId);
+            AddLink(saved?.MALId, relation.RelationType, saved?.Title ?? relation.Name);
+        }
+        await db.SaveChangesAsync(ct);
+        return links.Count;
+    }
+
+    private static string NormalizeRelationType(string value)
+        => string.IsNullOrWhiteSpace(value) ? "Related" : value.ToUpperInvariant() switch
+        {
+            "PREQUEL" => "Prequel",
+            "SEQUEL" => "Sequel",
+            "PARENT" => "Parent Story",
+            "SIDE_STORY" => "Side Story",
+            "ALTERNATIVE" => "Alternative Version",
+            "SUMMARY" => "Summary",
+            "FULL_STORY" => "Full Story",
+            "CHARACTER" => "Character",
+            "ADAPTATION" => "Adaptation",
+            _ => string.Join(' ', value.Split('_', StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant()))
+        };
 
     /// <summary>Refreshes the AniList recommendations for a locally stored anime.</summary>
     public async Task<int> FetchAndStoreRecommendationsAsync(int animeId, CancellationToken ct = default)

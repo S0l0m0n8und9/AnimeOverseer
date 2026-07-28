@@ -77,11 +77,11 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
         return media.ValueKind == JsonValueKind.Null ? null : MapFromAniList(media);
     }
 
-    public async Task<List<(int AniListId, string RelationType)>> GetRelationsAsync(int aniListId, CancellationToken ct = default)
+    public async Task<List<(Anime Anime, string RelationType)>> GetRelationsAsync(int aniListId, CancellationToken ct = default)
     {
-        var data = await QueryAsync("query ($id: Int!) { Media(id: $id, type: ANIME) { relations { edges { relationType node { id } } } } }", new { id = aniListId }, ct);
+        var data = await QueryAsync("query ($id: Int!) { Media(id: $id, type: ANIME) { relations { edges { relationType node { " + MediaFields + " } } } } }", new { id = aniListId }, ct);
         return data.GetProperty("Media").GetProperty("relations").GetProperty("edges").EnumerateArray()
-            .Select(x => (x.GetProperty("node").GetProperty("id").GetInt32(), GetString(x, "relationType") ?? "Related"))
+            .Select(x => (MapFromAniList(x.GetProperty("node")), GetString(x, "relationType") ?? "Related"))
             .ToList();
     }
 

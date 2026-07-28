@@ -1498,8 +1498,40 @@ img {
 
 /* --- Related Anime --- */
 .relations-section {
-    padding: 1.5rem 2rem 2rem;
+    padding: 0 0 .85rem;
     border-top: 1px solid var(--border-color);
+}
+
+.detail-collapsible > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin: .85rem 2rem 0;
+    padding: .8rem 1rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 1rem;
+    font-weight: 700;
+    list-style: none;
+    transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.detail-collapsible > summary::-webkit-details-marker { display: none; }
+.detail-collapsible > summary::after { content: ""; display: block; width: 1.35rem; height: 1.35rem; flex: 0 0 auto; color: var(--accent-light); border: 1px solid currentColor; border-radius: 50%; background: linear-gradient(currentColor, currentColor) center / 7px 1px no-repeat, linear-gradient(currentColor, currentColor) center / 1px 7px no-repeat; transition: background var(--transition-fast); }
+.detail-collapsible > summary:hover { background: rgba(139, 92, 246, 0.12); border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.detail-collapsible > summary:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 3px; }
+.detail-collapsible[open] > summary { border-color: var(--accent); }
+.detail-collapsible[open] > summary::after { background: linear-gradient(currentColor, currentColor) center / 7px 1px no-repeat, rgba(139, 92, 246, 0.2); }
+.detail-collapsible-content { padding: 1rem 2rem 2rem; }
+
+.recommendation-grid {
+    border-top: 0;
+    padding: 0;
+    max-height: none;
 }
 
 .relations-section h2 {
@@ -2339,10 +2371,13 @@ img {
 }
 
 .artwork-gallery {
-    margin: 1.5rem 2rem 0;
-    padding-top: 1.25rem;
+    margin: 1.5rem 2rem;
+    padding-top: 0;
     border-top: 1px solid #29334a;
 }
+
+.artwork-gallery > summary { margin: .85rem 0 0; }
+.artwork-gallery > .detail-collapsible-content { padding: 1rem 0 1.25rem; }
 
 .artwork-gallery-heading {
     display: flex;
