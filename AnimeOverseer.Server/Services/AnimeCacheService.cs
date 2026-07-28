@@ -103,26 +103,18 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Ima
         }
     }
 
-    public async Task<List<AnimeRelation>> GetAllRelationsAsync(int animeId, bool forceRefresh = false)
-    {
-        var root = await db.Animes.FindAsync(animeId);
-        if (root?.AniListId is not > 0) return [];
-        var source = await aniList.GetByAniListIdAsync(root.AniListId.Value);
-        if (source == null) return [];
-        // Relation nodes are supplied in the selected GraphQL response; fetch their full records before caching.
-        // The underlying JSON is intentionally not retained on Anime, so resolve the direct relations via a compact re-query.
-        var related = await aniList.GetRelationsAsync(root.AniListId.Value);
-        var result = new List<AnimeRelation>();
-        foreach (var relation in related)
-        {
-            var item = await aniList.GetByAniListIdAsync(relation.AniListId);
-            if (item == null) continue;
-            await UpsertAsync([item], root.SeasonId);
-            var saved = await db.Animes.SingleAsync(a => a.AniListId == item.AniListId);
-            result.Add(new AnimeRelation { AnimeId = saved.Id, RelationType = relation.RelationType, Name = saved.Title });
-        }
-        return result;
-    }
+    /// <summary>Returns recommendations already cached by the recommendation sync; never calls AniList.</summary>
+    public Task<List<AnimeRelation>> GetRecommendationsAsync(int animeId)
+        => (from recommendation in db.AnimeRecommendations.AsNoTracking()
+            join recommendedAnime in db.Animes.AsNoTracking() on recommendation.RecommendedAnimeId equals recommendedAnime.Id
+            where recommendation.SourceAnimeId == animeId
+            orderby recommendation.Rating descending, recommendedAnime.Title
+            select new AnimeRelation
+            {
+                AnimeId = recommendedAnime.Id,
+                Name = recommendedAnime.Title
+            })
+            .ToListAsync();
 
     /// <summary>Refreshes the AniList recommendations for a locally stored anime.</summary>
     public async Task<int> FetchAndStoreRecommendationsAsync(int animeId, CancellationToken ct = default)

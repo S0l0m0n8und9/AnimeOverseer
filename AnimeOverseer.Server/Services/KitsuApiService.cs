@@ -73,7 +73,7 @@ public class KitsuApiService : IAnimeDataSource
         return null;
     }
 
-    public Task<List<AnimeRelation>> GetAllRelationsAsync(int malId, bool forceRefresh = false) => Task.FromResult(new List<AnimeRelation>());
+    public Task<List<AnimeRelation>> GetRecommendationsAsync(int animeId) => Task.FromResult(new List<AnimeRelation>());
     public Task<List<Anime>> GetRecentAsync(int skip, int take) => Task.FromResult(new List<Anime>());
     public Task<int> GetTotalCountAsync() => Task.FromResult(0);
     public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => Task.FromResult(new List<Anime>());
