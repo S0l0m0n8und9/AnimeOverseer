@@ -1,5 +1,7 @@
 @using Microsoft.AspNetCore.Components.Routing
 @inject NavigationManager NavManager
+@inject AnimeOverseer.Server.Services.CollectionService CollectionService
+@inject AnimeOverseer.Server.Services.CollectionDragService CollectionDragService
 @implements IDisposable
 @rendermode InteractiveServer
 <nav class="header-nav">
@@ -21,6 +23,27 @@
             <NavLink href="/" Match="NavLinkMatch.All" class="nav-link active">
                 <span class="nav-icon">&#x1F3E0;</span> Dashboard
             </NavLink>
+            <div class="collections-nav-drop" @ondragenter="OpenCollectionDropAsync" @ondragover:preventDefault @ondrop="() => DropIntoCollectionAsync()">
+                <NavLink href="/collections" class="nav-link">
+                    <span class="nav-icon">&#x1F4C1;</span> Collections
+                </NavLink>
+                @if (showCollectionDrop)
+                {
+                    <div class="collections-nav-menu" @ondragover:preventDefault>
+                        @if (manualCollections.Count == 0)
+                        {
+                            <span>No manual collections yet</span>
+                        }
+                        else
+                        {
+                            @foreach (var collection in manualCollections)
+                            {
+                                <button @ondragover:preventDefault @ondrop="() => DropIntoCollectionAsync(collection.Id)">Add to @collection.Name</button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
             <NavLink href="/settings" class="nav-link">
                 <span class="nav-icon">&#x2699;&#xFE0F;</span> Settings
             </NavLink>
@@ -30,14 +53,21 @@
 
 @code {
     private string searchQuery = string.Empty;
+    private bool showCollectionDrop;
+    private List<AnimeOverseer.Server.Models.AnimeCollection> manualCollections = [];
 
     protected override void OnInitialized()
     {
         SyncSearchQuery(NavManager.Uri);
         NavManager.LocationChanged += OnLocationChanged;
+        CollectionDragService.Changed += OnDragStateChanged;
     }
 
-    public void Dispose() => NavManager.LocationChanged -= OnLocationChanged;
+    public void Dispose()
+    {
+        NavManager.LocationChanged -= OnLocationChanged;
+        CollectionDragService.Changed -= OnDragStateChanged;
+    }
 
     private void SubmitSearch()
     {
@@ -62,6 +92,28 @@
     {
         SyncSearchQuery(e.Location);
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OpenCollectionDropAsync()
+    {
+        if (CollectionDragService.AnimeId is null) return;
+        manualCollections = (await CollectionService.GetAllAsync()).Where(collection => collection.Type == AnimeOverseer.Server.Models.CollectionType.Manual).ToList();
+        showCollectionDrop = true;
+    }
+
+    private void OnDragStateChanged()
+    {
+        if (CollectionDragService.AnimeId is not null) return;
+        showCollectionDrop = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DropIntoCollectionAsync(int? collectionId = null)
+    {
+        if (collectionId is int id && CollectionDragService.AnimeId is int animeId)
+            await CollectionService.AddAnimeAsync(id, animeId);
+        CollectionDragService.Clear();
+        showCollectionDrop = false;
     }
 
     private void SyncSearchQuery(string location)

@@ -7,6 +7,7 @@
 @inject NavigationManager NavManager
 @inject MediaLibraryService MediaLibraryService
 @inject SettingsService SettingsService
+@inject CollectionDragService CollectionDragService
 @implements IDisposable
 
 <PageTitle>AnimeOverseer - Dashboard</PageTitle>
@@ -100,7 +101,7 @@
         <div class="anime-grid">
             @foreach (var anime in DisplayedAnimes)
             {
-                <AnimeCard Anime="@anime" />
+                <AnimeCard Anime="@anime" Draggable="true" OnDragStarted="StartCollectionDrag" OnDragEnded="EndCollectionDrag" />
             }
         </div>
     }
@@ -147,6 +148,9 @@
             .Where(anime => showNsfw || !IsNsfw(anime))
             .ToList(),
         sortState, IsInLibrary);
+
+    private void StartCollectionDrag(int animeId) => CollectionDragService.Start(animeId);
+    private void EndCollectionDrag() => CollectionDragService.Clear();
 
     private bool HasLibraryFilter => filterState.Groups
         .SelectMany(g => g.Conditions)

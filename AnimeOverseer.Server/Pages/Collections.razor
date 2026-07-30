@@ -1,0 +1,132 @@
+@page "/collections"
+@page "/collections/{CollectionId:int}"
+@rendermode InteractiveServer
+@using AnimeOverseer.Server.Models
+@using AnimeOverseer.Server.Services
+@inject CollectionService CollectionService
+@inject IAnimeDataSource AnimeDataSource
+@inject NavigationManager Navigation
+
+<PageTitle>Collections - AnimeOverseer</PageTitle>
+
+<div class="collections-page">
+    <aside class="collections-sidebar">
+        <div class="collections-sidebar-heading"><h1>Collections</h1><button class="btn btn-primary" @onclick="NewCollection">+ New</button></div>
+        <p class="collections-help">Curate a list yourself, or save filters that update automatically as your catalogue grows.</p>
+        @foreach (var item in collections)
+        {
+            <button class="collection-list-item @(selected?.Id == item.Id ? "selected" : "")" @onclick="() => SelectCollectionAsync(item.Id)">
+                <span>@item.Name</span><small>@(item.Type == CollectionType.Manual ? $"Manual · {item.Items.Count}" : "Automatic")</small>
+            </button>
+        }
+    </aside>
+
+    <section class="collection-content">
+        @if (isLoading)
+        {
+            <div class="loading-container"><div class="spinner"></div></div>
+        }
+        else if (editing)
+        {
+            <div class="collection-editor">
+                <h2>@(selected?.Id > 0 ? "Edit collection" : "New collection")</h2>
+                <label>Name <input @bind="editName" maxlength="100" placeholder="e.g. Autumn watchlist" /></label>
+                <label>Description <textarea @bind="editDescription" maxlength="500" placeholder="Optional note about this collection"></textarea></label>
+                <div class="collection-type-choice">
+                    <label><input type="radio" name="collection-type" checked="@(editType == CollectionType.Manual)" @onchange="() => editType = CollectionType.Manual" /> Manual <span>You choose every anime.</span></label>
+                    <label><input type="radio" name="collection-type" checked="@(editType == CollectionType.Automatic)" @onchange="() => editType = CollectionType.Automatic" /> Automatic <span>Matching anime appear on their own.</span></label>
+                </div>
+                @if (editType == CollectionType.Automatic)
+                {
+                    <div class="saved-filter"><h3>Collection filters</h3><FilterBuilder State="editFilters" OnChanged="FiltersChanged" AvailableGenres="genres" AvailableThemes="themes" AvailableDemographics="demographics" /></div>
+                }
+                <div class="collection-editor-actions"><button class="btn btn-primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(editName)">Save collection</button><button class="btn" @onclick="CancelEdit">Cancel</button></div>
+            </div>
+        }
+        else if (selected is not null)
+        {
+            <div class="collection-header">
+                <div><p class="collection-type-label">@(selected.Type == CollectionType.Manual ? "Manual collection" : "Automatic collection")</p><h1>@selected.Name</h1>@if (!string.IsNullOrWhiteSpace(selected.Description)) { <p>@selected.Description</p> }</div>
+                <div><button class="btn" @onclick="EditSelected">Edit</button><button class="btn btn-danger" @onclick="DeleteSelectedAsync">Delete</button></div>
+            </div>
+            @if (selected.Type == CollectionType.Manual)
+            {
+                <div class="collection-add"><input @bind="animeQuery" @bind:event="oninput" @bind:after="SearchAnimeAsync" placeholder="Quick search cached anime…" />
+                    @if (searchResults.Count > 0) { <div class="collection-search-results">@foreach (var anime in searchResults) { <button @onclick="() => AddAnimeAsync(anime.Id)"><span>@anime.Title</span><small>@anime.Type · @(anime.StartDate?.Year.ToString() ?? "Unknown")</small></button> }</div> }
+                </div>
+                <details class="collection-catalogue-browser" open>
+                    <summary>Browse cached catalogue</summary>
+                    <FilterBuilder State="manualFilters" OnChanged="RefreshManualCandidatesAsync" AvailableGenres="genres" AvailableThemes="themes" AvailableDemographics="demographics" />
+                    <p class="collection-filter-summary">Showing up to 200 matching anime from the local cache. Select one to add it to this collection.</p>
+                    <div class="synced-anime-grid collection-catalogue-grid">
+                        @foreach (var anime in manualCandidates)
+                        {
+                            <button class="synced-anime-card collection-catalogue-card" @onclick="() => AddAnimeAsync(anime.Id)" title="Add @anime.Title">
+                                <div class="synced-anime-image-wrapper">
+                                    @if (!string.IsNullOrEmpty(anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(anime.DisplayImageUrl)) { <img class="synced-anime-image" src="@(anime.DisplayLocalImagePath ?? anime.DisplayImageUrl)" alt="@anime.Title cover" /> }
+                                    else { <div class="synced-anime-placeholder">&#x1F3AC;</div> }
+                                </div>
+                                <span class="synced-anime-title">@anime.Title</span>
+                            </button>
+                        }
+                    </div>
+                </details>
+            }
+            else
+            {
+                <p class="collection-filter-summary">This collection updates whenever anime match its saved filters.</p>
+            }
+            <p class="results-info">@collectionAnime.Count anime@(collectionAnime.Count == 1 ? "" : "s")</p>
+            @if (collectionAnime.Count == 0) { <div class="empty-state"><span class="empty-icon">&#x1F4C1;</span><h3>No anime here yet</h3><p>@(selected.Type == CollectionType.Manual ? "Search above to start building this collection." : "Adjust the saved filters to find matching anime.")</p></div> }
+            else { <div class="anime-grid">@foreach (var anime in collectionAnime) { <div class="collection-anime"><AnimeCard Anime="anime" />@if (selected.Type == CollectionType.Manual) { <button class="collection-remove" @onclick="() => RemoveAnimeAsync(anime.Id)">Remove</button> }</div> }</div> }
+        }
+        else
+        {
+            <div class="empty-state"><span class="empty-icon">&#x1F4C1;</span><h3>Make your first collection</h3><p>Create a manual watchlist or an automatic collection based on filters.</p><button class="btn btn-primary" @onclick="NewCollection">Create collection</button></div>
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter] public int? CollectionId { get; set; }
+    private List<AnimeCollection> collections = [];
+    private AnimeCollection? selected;
+    private List<Anime> collectionAnime = [], searchResults = [], manualCandidates = [];
+    private List<string> genres = [], themes = [], demographics = [];
+    private bool isLoading, editing;
+    private string editName = string.Empty, editDescription = string.Empty, animeQuery = string.Empty;
+    private CollectionType editType = CollectionType.Manual;
+    private FilterState editFilters = new();
+    private FilterState manualFilters = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var genreTask = AnimeDataSource.GetGenreNamesAsync(); var themeTask = AnimeDataSource.GetThemeNamesAsync(); var demographicTask = AnimeDataSource.GetDemographicNamesAsync();
+        collections = await CollectionService.GetAllAsync();
+        await Task.WhenAll(genreTask, themeTask, demographicTask);
+        genres = genreTask.Result; themes = themeTask.Result; demographics = demographicTask.Result;
+        if (CollectionId is int id) await LoadSelectedAsync(id);
+        isLoading = false;
+    }
+
+    protected override async Task OnParametersSetAsync() { if (CollectionId is int id && selected?.Id != id) await LoadSelectedAsync(id); }
+    private async Task SelectCollectionAsync(int id) => Navigation.NavigateTo($"/collections/{id}");
+    private async Task LoadSelectedAsync(int id) { selected = await CollectionService.GetAsync(id); collectionAnime = selected is null ? [] : await CollectionService.GetAnimeAsync(selected); searchResults = []; animeQuery = string.Empty; manualFilters = new(); manualCandidates = selected?.Type == CollectionType.Manual ? await AnimeDataSource.GetFilteredAsync(manualFilters, 0, 200) : []; }
+    private void NewCollection() { selected = null; editing = true; editName = editDescription = string.Empty; editType = CollectionType.Manual; editFilters = new(); }
+    private void EditSelected() { if (selected is null) return; editing = true; editName = selected.Name; editDescription = selected.Description ?? string.Empty; editType = selected.Type; editFilters = CollectionService.Deserialize(selected.FilterJson); }
+    private void CancelEdit() { editing = false; if (selected is null) Navigation.NavigateTo("/collections"); }
+    private void FiltersChanged() => StateHasChanged();
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(editName)) return;
+        if (selected is null) { var created = await CollectionService.CreateAsync(editName, editDescription, editType, editFilters); Navigation.NavigateTo($"/collections/{created.Id}"); }
+        else { await CollectionService.UpdateAsync(selected.Id, editName, editDescription, editType, editFilters); editing = false; await RefreshSelectedAsync(); }
+    }
+    private async Task RefreshSelectedAsync() { collections = await CollectionService.GetAllAsync(); if (selected is not null) await LoadSelectedAsync(selected.Id); }
+    private async Task DeleteSelectedAsync() { if (selected is null) return; await CollectionService.DeleteAsync(selected.Id); selected = null; collectionAnime = []; collections = await CollectionService.GetAllAsync(); Navigation.NavigateTo("/collections"); }
+    private async Task SearchAnimeAsync() { searchResults = animeQuery.Trim().Length < 2 ? [] : await CollectionService.SearchAnimeAsync(animeQuery); }
+    private async Task RefreshManualCandidatesAsync() { manualCandidates = await AnimeDataSource.GetFilteredAsync(manualFilters, 0, 200); }
+    private async Task AddAnimeAsync(int animeId) { if (selected is null) return; await CollectionService.AddAnimeAsync(selected.Id, animeId); animeQuery = string.Empty; searchResults = []; await RefreshSelectedAsync(); }
+    private async Task RemoveAnimeAsync(int animeId) { if (selected is null) return; await CollectionService.RemoveAnimeAsync(selected.Id, animeId); await RefreshSelectedAsync(); }
+}

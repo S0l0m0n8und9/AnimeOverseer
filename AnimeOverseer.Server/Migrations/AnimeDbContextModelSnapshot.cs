@@ -120,6 +120,56 @@ namespace AnimeOverseer.Server.Migrations
                     b.ToTable("AnimeImages");
                 });
 
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeCollection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilterJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AnimeCollections");
+                });
+
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeCollectionItem", b =>
+                {
+                    b.Property<int>("CollectionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AnimeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CollectionId", "AnimeId");
+
+                    b.HasIndex("AnimeId");
+
+                    b.ToTable("AnimeCollectionItems");
+                });
+
             modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeRecommendation", b =>
                 {
                     b.Property<int>("SourceAnimeId")
@@ -662,6 +712,30 @@ namespace AnimeOverseer.Server.Migrations
                     b.Navigation("AnimeThemes");
 
                     b.Navigation("Requests");
+                });
+
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeCollectionItem", b =>
+                {
+                    b.HasOne("AnimeOverseer.Server.Models.Anime", "Anime")
+                        .WithMany()
+                        .HasForeignKey("AnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AnimeOverseer.Server.Models.AnimeCollection", "Collection")
+                        .WithMany("Items")
+                        .HasForeignKey("CollectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Anime");
+
+                    b.Navigation("Collection");
+                });
+
+            modelBuilder.Entity("AnimeOverseer.Server.Models.AnimeCollection", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("AnimeOverseer.Server.Models.Demographic", b =>

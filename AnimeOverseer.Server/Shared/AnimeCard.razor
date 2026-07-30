@@ -3,7 +3,7 @@
 @inject MediaRequestService MediaRequestService
 @inject MediaLibraryService MediaLibraryService
 
-<div class="anime-card">
+<div class="anime-card @(Draggable ? "anime-card-draggable" : "")" draggable="@Draggable" @ondragstart="OnDragStart" @ondragend="OnDragEnd">
     <a class="anime-card-link" href="/anime/@Anime.Id" aria-label="View @(Anime.Title ?? Anime.OriginalTitle) details"></a>
     <div class="card-image-wrapper">
         @if (!string.IsNullOrEmpty(Anime.DisplayLocalImagePath) || !string.IsNullOrEmpty(Anime.DisplayImageUrl))
@@ -95,12 +95,19 @@
     [Parameter]
     public Anime Anime { get; set; } = default!;
 
+    [Parameter] public bool Draggable { get; set; }
+    [Parameter] public EventCallback<int> OnDragStarted { get; set; }
+    [Parameter] public EventCallback OnDragEnded { get; set; }
+
     private bool _isRequesting;
     private (bool Ok, string Msg)? _requestResult;
     private bool _showPicker;
     private List<MediaLookupResult>? _pickerResults;
     private bool _inLibrary;
     private bool _requestToRadarr;
+
+    private Task OnDragStart() => Draggable ? OnDragStarted.InvokeAsync(Anime.Id) : Task.CompletedTask;
+    private Task OnDragEnd() => Draggable ? OnDragEnded.InvokeAsync() : Task.CompletedTask;
 
     protected override async Task OnParametersSetAsync()
     {

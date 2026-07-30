@@ -28,6 +28,8 @@ public class AnimeDbContext : DbContext
     public DbSet<SyncJob> SyncJobs { get; set; }
     public DbSet<SyncJobLog> SyncJobLogs { get; set; }
     public DbSet<IntegrationSchedule> IntegrationSchedules { get; set; }
+    public DbSet<AnimeCollection> AnimeCollections { get; set; }
+    public DbSet<AnimeCollectionItem> AnimeCollectionItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +88,15 @@ public class AnimeDbContext : DbContext
             .HasOne<Anime>()
             .WithMany()
             .HasForeignKey(recommendation => recommendation.SourceAnimeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AnimeCollectionItem>()
+            .HasKey(item => new { item.CollectionId, item.AnimeId });
+        modelBuilder.Entity<AnimeCollectionItem>()
+            .HasOne(item => item.Collection).WithMany(collection => collection.Items)
+            .HasForeignKey(item => item.CollectionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AnimeCollectionItem>()
+            .HasOne(item => item.Anime).WithMany().HasForeignKey(item => item.AnimeId)
             .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<AnimeRecommendation>()
             .HasOne<Anime>()
