@@ -30,3 +30,4 @@
 /AnimeOverseer.Server/*.staticwebassets.endpoints.json
 /AnimeOverseer.Server/runtimes/
 /AnimeOverseer.Server/web.config
+/.buildcheck/Debug/net10.0
