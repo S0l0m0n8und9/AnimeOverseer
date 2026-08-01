@@ -87,7 +87,44 @@
                             {
                                 <span class="condition-value condition-value--data">No value needed</span>
                             }
-                            else if (IsSelectField(cond.Field))
+                            else if (UsesExpressionInput(cond.Field) && HasSelectableValues(cond))
+                            {
+                                var values = SelectableValuesFor(cond);
+                                <div class="condition-value-with-formula">
+                                    <select class="form-select condition-value" value="@cond.Value" @onchange="e => ChangeValue(cond, e)">
+                                        <option value="">Any</option>
+                                        @if (!string.IsNullOrWhiteSpace(cond.Value) && !values.Contains(cond.Value))
+                                        {
+                                            <option value="@cond.Value">@cond.Value</option>
+                                        }
+                                        @foreach (var value in values)
+                                        {
+                                            <option value="@value">@value</option>
+                                        }
+                                    </select>
+                                    <button type="button" class="formulae-button @(formulaMenuFor == cond.Id ? "formulae-button--open" : "")" title="Insert a dynamic formula" aria-label="Formulae" @onclick="() => ToggleFormulaMenu(cond.Id)"><span class="formulae-icon" aria-hidden="true">&#123;&#123;&#x1D453;&#125;&#125;</span></button>
+                                    @if (formulaMenuFor == cond.Id)
+                                    {
+                                        <div class="formulae-menu">
+                                            <strong>Dynamic value</strong>
+                                            <label class="formulae-field-picker">Anime field
+                                                <select class="form-select" @onchange="e => ApplyFieldAsync(cond, e)">
+                                                    <option value="">Choose a field…</option>
+                                                    @foreach (var field in AnimeFields)
+                                                    {
+                                                        <option value="@field.Value">@field.Label</option>
+                                                    }
+                                                </select>
+                                            </label>
+                                            @foreach (var formula in FormulaeFor(cond.Field))
+                                            {
+                                                <button type="button" @onclick="() => ApplyFormulaAsync(cond, formula.Value)"><code>@formula.Value</code><span>@formula.Description</span></button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (IsSelectField(cond.Field) && !UsesExpressionInput(cond.Field))
                             {
                                 <select class="form-select condition-value"
                                         value="@cond.Value"
@@ -99,7 +136,7 @@
                                     }
                                 </select>
                             }
-                            else if (IsTagSelectField(cond) && TagValuesFor(cond).Count > 0)
+                            else if (IsTagSelectField(cond) && TagValuesFor(cond).Count > 0 && !UsesExpressionInput(cond.Field))
                             {
                                 <select class="form-select condition-value"
                                         value="@cond.Value"
@@ -111,7 +148,7 @@
                                     }
                                 </select>
                             }
-                            else if (IsNumberField(cond.Field))
+                            else if (IsNumberField(cond.Field) && !UsesExpressionInput(cond.Field))
                             {
                                 <input type="number" class="form-input condition-value"
                                        placeholder="@PlaceholderFor(cond.Field)"
@@ -120,7 +157,7 @@
                                        value="@cond.Value"
                                        @onchange="e => ChangeValue(cond, e)" />
                             }
-                            else if (IsDateField(cond.Field))
+                            else if (IsDateField(cond.Field) && !UsesExpressionInput(cond.Field))
                             {
                                 <input type="date" class="form-input condition-value"
                                        value="@cond.Value"
@@ -128,10 +165,38 @@
                             }
                             else
                             {
-                                <input type="text" class="form-input condition-value"
-                                       placeholder="Value..."
-                                       value="@cond.Value"
-                                       @oninput="e => ChangeValueImmediate(cond, e)" />
+                                <div class="condition-value-with-formula">
+                                    <input type="text" class="form-input condition-value"
+                                           placeholder="@(UsesExpressionInput(cond.Field) ? ExpressionPlaceholder(cond.Field) : "Value...")"
+                                           value="@cond.Value"
+                                           @oninput="e => ChangeValueImmediate(cond, e)" />
+                                    @if (UsesExpressionInput(cond.Field))
+                                    {
+                                        <button type="button" class="formulae-button @(formulaMenuFor == cond.Id ? "formulae-button--open" : "")" title="Insert a dynamic formula" aria-label="Formulae" @onclick="() => ToggleFormulaMenu(cond.Id)"><span class="formulae-icon" aria-hidden="true">&#123;&#123;&#x1D453;&#125;&#125;</span></button>
+                                        @if (formulaMenuFor == cond.Id)
+                                        {
+                                            <div class="formulae-menu">
+                                                <strong>Dynamic value</strong>
+                                                @if (IsStringField(cond.Field))
+                                                {
+                                                    <label class="formulae-field-picker">Anime field
+                                                        <select class="form-select" @onchange="e => ApplyFieldAsync(cond, e)">
+                                                            <option value="">Choose a field…</option>
+                                                            @foreach (var field in AnimeFields)
+                                                            {
+                                                                <option value="@field.Value">@field.Label</option>
+                                                            }
+                                                        </select>
+                                                    </label>
+                                                }
+                                                @foreach (var formula in FormulaeFor(cond.Field))
+                                                {
+                                                    <button type="button" @onclick="() => ApplyFormulaAsync(cond, formula.Value)"><code>@formula.Value</code><span>@formula.Description</span></button>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                </div>
                             }
 
                             <button class="condition-remove" @onclick="() => RemoveCondition(g, cond)" title="Remove">&#x2715;</button>
@@ -159,8 +224,10 @@
     [Parameter] public List<string> AvailableGenres { get; set; } = [];
     [Parameter] public List<string> AvailableThemes { get; set; } = [];
     [Parameter] public List<string> AvailableDemographics { get; set; } = [];
+    [Parameter] public bool AllowDynamicExpressions { get; set; }
 
     private bool expanded = false;
+    private Guid? formulaMenuFor;
 
     private void ToggleExpanded() => expanded = !expanded;
 
@@ -204,6 +271,22 @@
         await Notify();
     }
 
+    private void ToggleFormulaMenu(Guid id) => formulaMenuFor = formulaMenuFor == id ? null : id;
+
+    private async Task ApplyFormulaAsync(FilterCondition condition, string value)
+    {
+        condition.Value = value;
+        formulaMenuFor = null;
+        await Notify();
+    }
+
+    private async Task ApplyFieldAsync(FilterCondition condition, ChangeEventArgs e)
+    {
+        var field = e.Value?.ToString();
+        if (string.IsNullOrEmpty(field)) return;
+        await ApplyFormulaAsync(condition, $"{{{{{field}}}}}");
+    }
+
     private void AddCondition(FilterGroup group)
     {
         group.Conditions.Add(new FilterCondition());
@@ -244,6 +327,13 @@
         FilterField.Demographics => AvailableDemographics,
         _                        => AvailableGenres
     };
+
+    private bool HasSelectableValues(FilterCondition condition) =>
+        IsSelectField(condition.Field) || (IsTagSelectField(condition) && TagValuesFor(condition).Count > 0);
+
+    private List<string> SelectableValuesFor(FilterCondition condition) => IsSelectField(condition.Field)
+        ? SelectValuesFor(condition.Field).ToList()
+        : TagValuesFor(condition);
 
     private static List<FilterOperator> OperatorsFor(FilterField field) => field switch
     {
@@ -325,6 +415,60 @@
 
     private static bool IsDateField(FilterField f) =>
         f is FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt;
+
+    private bool UsesExpressionInput(FilterField field) => AllowDynamicExpressions &&
+        (field is FilterField.Year or FilterField.Season or FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt || IsStringField(field));
+
+    private static bool IsStringField(FilterField field) => field is FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or
+        FilterField.Type or FilterField.Status or FilterField.Season or FilterField.Genres or FilterField.Themes or FilterField.Demographics;
+
+    private static readonly (string Value, string Label)[] AnimeFields =
+    [
+        ("id", "ID"), ("title", "Title"), ("originalTitle", "Original title"), ("synopsis", "Synopsis"),
+        ("type", "Type"), ("status", "Status"), ("season", "Season"), ("year", "Year"),
+        ("episodes", "Episodes"), ("duration", "Duration"), ("rating", "Rating"),
+        ("malId", "MAL ID"), ("aniListId", "AniList ID"), ("kitsuId", "Kitsu ID"),
+        ("startDate", "Start date"), ("endDate", "End date"), ("cachedAt", "Cached at"),
+        ("genres", "Genres"), ("themes", "Themes"), ("demographics", "Demographics")
+    ];
+
+    private static string ExpressionPlaceholder(FilterField field) => field switch
+    {
+        FilterField.Year => "e.g. currentYear + 1",
+        FilterField.Season => "e.g. nextSeason",
+        FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or FilterField.Type or FilterField.Status or FilterField.Genres or FilterField.Themes or FilterField.Demographics => "e.g. {{replace(\"My Anime\", \" \", \"-\")}}",
+        _ => "e.g. today + 7d"
+    };
+
+    private static (string Value, string Description)[] FormulaeFor(FilterField field) => field switch
+    {
+        FilterField.Year => [
+            ("currentYear", "This calendar year"),
+            ("currentYear + 1", "One year ahead"),
+            ("currentYear - 1", "One year ago"),
+            ("nextYear", "Next calendar year"),
+            ("nextSeasonYear", "Calendar year of the next anime season"),
+            ("previousYear", "Previous calendar year")],
+        FilterField.Season => [
+            ("currentSeason", "The current anime season"),
+            ("nextSeason", "The following anime season"),
+            ("previousSeason", "The preceding anime season")],
+        FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or FilterField.Type or FilterField.Status or FilterField.Genres or FilterField.Themes or FilterField.Demographics => [
+            ("{{lower(\"Text\")}}", "Convert text to lowercase"),
+            ("{{upper(\"Text\")}}", "Convert text to uppercase"),
+            ("{{trim(\" Text \")}}", "Remove surrounding spaces"),
+            ("{{replace(\"My Anime\", \" \", \"-\")}}", "Replace text"),
+            ("{{concat(\"Part \", \"2\")}}", "Join text"),
+            ("{{substring(\"Anime\", 0, 3)}}", "Take part of text"),
+            ("{{title}}", "This anime's title"),
+            ("{{season}}", "This anime's season"),
+            ("{{year}}", "This anime's year")],
+        _ => [
+            ("today", "Today"),
+            ("today + 7d", "Seven days from today"),
+            ("today - 7d", "Seven days ago"),
+            ("currentDate", "Today")]
+    };
 
     private static string PlaceholderFor(FilterField f) => f switch
     {

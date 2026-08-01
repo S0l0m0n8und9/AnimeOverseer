@@ -134,6 +134,8 @@
                         <label>Years<input class="form-input" type="number" min="1" style="display:block;width:5rem" @bind="schedule.YearCount" /></label>
                         <span style="color:#aaa;margin-bottom:.55rem">(@YearScopeText(schedule))</span>
                     </div>
+                    <label style="display:block;margin-top:.45rem">Year expressions (optional)<input class="form-input" style="display:block;width:min(34rem,100%)" @bind="schedule.YearExpressions" placeholder="{{currentyear}} - 10, {{currentyear}}, {{currentyear}} + 2" /></label>
+                    <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Comma-separate years to join them. Expressions can use <code>{{currentyear}}</code>, <code>{{nextyear}}</code>, or <code>{{previousyear}}</code> with <code>+</code> or <code>-</code>; supplied expressions replace the starting-year range.</p>
                     <div style="margin-top:.45rem"><span style="color:#aaa">Seasons: </span>@foreach (var season in SeasonOptions) { <label style="margin-left:.6rem"><input type="checkbox" checked="@ScheduleHasSeason(schedule, season)" @onchange="e => ToggleScheduleSeason(schedule, season, (bool)e.Value!)" /> @Capitalize(season)</label> } <button type="button" class="btn btn-secondary" style="font-size:.8em;padding:.15rem .4rem;margin-left:.6rem" @onclick="() => UseRemainingSeasons(schedule)">Use remaining current-year seasons</button></div>
                     <label style="display:block;margin-top:.6rem;color:#ddd"><input type="checkbox" @bind="schedule.ProcessOneSeasonAtATime" /> Process one season at a time (initial migration)</label>
                 </div>
@@ -870,6 +872,11 @@
             _integrationMessage = "Choose at least one season for the scheduled job.";
             return;
         }
+        if (!IntegrationScheduleService.TryYearsFor(_editingSchedule, DateTime.UtcNow, out _, out var yearExpressionError))
+        {
+            _integrationMessage = yearExpressionError;
+            return;
+        }
         await IntegrationScheduleService.SaveAsync(_editingSchedule, _restartScheduleOnSave);
         await LoadIntegrationSchedulesAsync();
         _editingSchedule = null;
@@ -947,9 +954,9 @@
     private static string Capitalize(string value) => char.ToUpperInvariant(value[0]) + value[1..];
     private static string YearScopeText(IntegrationSchedule schedule)
     {
-        var start = DateTime.UtcNow.Year + schedule.YearOffset;
-        var end = start + schedule.YearCount - 1;
-        return start == end ? start.ToString() : $"{start}–{end}";
+        return IntegrationScheduleService.TryYearsFor(schedule, DateTime.UtcNow, out var years, out _)
+            ? string.Join(", ", years)
+            : "Invalid year expression";
     }
     private static string DescribeSchedule(IntegrationSchedule s)
         => s.WorkType == "Recommendations"

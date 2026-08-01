@@ -67,7 +67,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         {
             var remote = await aniList.GetSeasonAnimesAsync(year, season, onPageFetched, ct);
             var seasonRow = await GetOrCreateSeasonAsync(season, year, ct);
-            syncedIds.AddRange(await UpsertAsync(remote, seasonRow.Id, ct));
+            syncedIds.AddRange(await UpsertAsync(remote, seasonRow.Id, ct: ct));
         }
         return syncedIds.Distinct().ToList();
     }
@@ -87,7 +87,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
             var remote = await fetch(year, season, ct);
             if (onSeasonFetched is not null) await onSeasonFetched(remote.Count);
             var seasonRow = await GetOrCreateSeasonAsync(season, year, ct);
-            syncedIds.AddRange(await UpsertAsync(remote, seasonRow.Id, ct));
+            syncedIds.AddRange(await UpsertAsync(remote, seasonRow.Id, ct: ct));
         }
         return syncedIds.Distinct().ToList();
     }
@@ -138,7 +138,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         if (root?.AniListId is not > 0 || root.MALId is not > 0) return 0;
 
         var aniListRelations = await aniList.GetRelationsAsync(root.AniListId.Value, ct);
-        await UpsertAsync(aniListRelations.Select(item => item.Anime).ToList(), root.SeasonId, ct);
+        await UpsertAsync(aniListRelations.Select(item => item.Anime).ToList(), root.SeasonId, preserveExistingSeason: true, ct: ct);
         var jikanRelations = await jikan.GetRelationsAsync(root.MALId.Value);
 
         var relatedAniListIds = aniListRelations.Select(item => item.Anime.AniListId).Where(id => id is > 0).Select(id => id!.Value).ToArray();
@@ -196,7 +196,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
 
         var remote = await aniList.GetRecommendationsAsync(root.AniListId.Value, ct);
         var candidates = remote.Select(item => item.Anime).ToList();
-        await UpsertAsync(candidates, root.SeasonId, ct);
+        await UpsertAsync(candidates, root.SeasonId, preserveExistingSeason: true, ct: ct);
 
         var aniListIds = candidates.Where(anime => anime.AniListId is > 0).Select(anime => anime.AniListId!.Value).ToArray();
         var saved = await db.Animes.Where(anime => anime.AniListId != null && aniListIds.Contains(anime.AniListId.Value))
@@ -272,7 +272,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         return true;
     }
 
-    private async Task<List<int>> UpsertAsync(List<Anime> incoming, int? fixedSeasonId, CancellationToken ct = default)
+    private async Task<List<int>> UpsertAsync(List<Anime> incoming, int? fixedSeasonId, bool preserveExistingSeason = false, CancellationToken ct = default)
     {
         var aniListIds = incoming.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).Distinct().ToList();
         var malIds = incoming.Where(a => a.MALId is > 0).Select(a => a.MALId!.Value).Distinct().ToList();
@@ -305,7 +305,10 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
                 }
                 if (target is null)
                 {
-                    target = new Anime { AniListId = source.AniListId, SeasonId = fixedSeasonId ?? await UnknownSeasonIdAsync(ct) };
+                    var seasonId = preserveExistingSeason
+                        ? await SeasonForSourceAsync(source, fixedSeasonId, ct)
+                        : fixedSeasonId ?? await UnknownSeasonIdAsync(ct);
+                    target = new Anime { AniListId = source.AniListId, SeasonId = seasonId };
                     db.Animes.Add(target);
                 }
             }
@@ -314,7 +317,9 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
             if (source.AniListId is > 0) existing[$"a:{source.AniListId}"] = target;
             if (source.MALId is > 0) existing[$"m:{source.MALId}"] = target;
             AddNameCandidates(existingByName, source, target);
-            if (fixedSeasonId is > 0) target.SeasonId = fixedSeasonId.Value;
+            // Recommendation and relation lookups enrich many existing titles.
+            // They must not move a title into the source title's season.
+            if (fixedSeasonId is > 0 && !preserveExistingSeason) target.SeasonId = fixedSeasonId.Value;
             target.CachedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync(ct);
@@ -331,6 +336,13 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
             db.ChangeTracker.Clear();
         }
         return syncedIds;
+    }
+
+    private async Task<int> SeasonForSourceAsync(Anime source, int? fallbackSeasonId, CancellationToken ct)
+    {
+        if (source.StartDate?.Year is int year and > 0)
+            return (await GetOrCreateSeasonAsync(SeasonName(source.StartDate), year, ct)).Id;
+        return fallbackSeasonId ?? await UnknownSeasonIdAsync(ct);
     }
 
     private static string Key(Anime anime) => anime.AniListId is > 0 ? $"a:{anime.AniListId}" : $"m:{anime.MALId}";

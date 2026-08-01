@@ -53,7 +53,14 @@ public class CollectionService(AnimeDbContext db)
     {
         if (collection.Type == CollectionType.Manual)
             return await Animes().Where(anime => db.AnimeCollectionItems.Any(item => item.CollectionId == collection.Id && item.AnimeId == anime.Id)).OrderBy(anime => anime.Title).ToListAsync();
-        return await FilterQueryBuilder.Apply(Animes(), Deserialize(collection.FilterJson)).OrderByDescending(anime => anime.StartDate).ToListAsync();
+        var savedFilters = Deserialize(collection.FilterJson);
+        if (CollectionFilterExpressionResolver.RequiresAnimeContext(savedFilters))
+        {
+            var animes = await Animes().ToListAsync();
+            return animes.Where(anime => FilterEngine.Apply([anime], CollectionFilterExpressionResolver.Resolve(savedFilters, anime: anime)).Count == 1)
+                .OrderByDescending(anime => anime.StartDate).ToList();
+        }
+        return await FilterQueryBuilder.Apply(Animes(), CollectionFilterExpressionResolver.Resolve(savedFilters)).OrderByDescending(anime => anime.StartDate).ToListAsync();
     }
 
     public async Task<bool> AddAnimeAsync(int collectionId, int animeId)

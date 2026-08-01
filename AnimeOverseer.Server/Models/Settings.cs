@@ -59,6 +59,8 @@ public class IntegrationSchedule
     // Catalogue scope is relative to when the job runs, not when it is configured.
     public int YearOffset { get; set; }
     public int YearCount { get; set; } = 1;
+    /// <summary>Optional comma-separated dynamic year values, such as {{currentyear}} - 10.</summary>
+    public string? YearExpressions { get; set; }
     public string SeasonsJson { get; set; } = "[\"winter\",\"spring\",\"summer\",\"fall\"]";
     public DateTime? LastQueuedAt { get; set; }
 }

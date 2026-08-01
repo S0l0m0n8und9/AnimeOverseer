@@ -13,6 +13,17 @@ namespace AnimeOverseer.Server.Tests;
 public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
 {
     [Fact]
+    public void Year_expressions_support_braces_math_and_joining()
+    {
+        var schedule = new IntegrationSchedule
+        {
+            YearExpressions = "{{{{currentyear}} - 10}}, {{currentyear}} + 1; 1998"
+        };
+
+        Assert.Equal([2016, 2027, 1998], IntegrationScheduleService.YearsFor(schedule, new DateTime(2026, 8, 1)));
+    }
+
+    [Fact]
     public async Task Recommendation_schedule_queues_a_dedicated_recommendation_job()
     {
         await using var db = CreateDb();

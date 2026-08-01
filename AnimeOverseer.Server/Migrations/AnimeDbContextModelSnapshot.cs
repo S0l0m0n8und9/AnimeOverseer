@@ -349,6 +349,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<int>("YearCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("YearExpressions")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("YearOffset")
                         .HasColumnType("INTEGER");
 

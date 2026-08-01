@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using AnimeOverseer.Server.BackgroundServices;
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
@@ -58,6 +60,9 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
         schedule.EndBy = input.EndType == "By" ? input.EndBy?.Date : null;
         schedule.YearOffset = Math.Clamp(input.YearOffset, -100, 100);
         schedule.YearCount = Math.Clamp(input.YearCount, 1, 100);
+        if (!TryYearsFor(input, DateTime.UtcNow, out _, out var yearExpressionError))
+            throw new ArgumentException(yearExpressionError);
+        schedule.YearExpressions = string.IsNullOrWhiteSpace(input.YearExpressions) ? null : input.YearExpressions.Trim();
         schedule.SeasonsJson = NormalizeSeasons(input.SeasonsJson);
         // A chained range starts one sequence; it should not restart the range on
         // every recurrence unless the user deliberately creates another one.
@@ -127,7 +132,61 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
     }
 
     public static int[] YearsFor(IntegrationSchedule schedule, DateTime now)
-        => Enumerable.Range(now.Year + schedule.YearOffset, schedule.YearCount).ToArray();
+    {
+        if (string.IsNullOrWhiteSpace(schedule.YearExpressions))
+            return Enumerable.Range(now.Year + schedule.YearOffset, schedule.YearCount).ToArray();
+
+        return ParseYearExpressions(schedule.YearExpressions, now);
+    }
+
+    public static bool TryYearsFor(IntegrationSchedule schedule, DateTime now, out int[] years, out string? error)
+    {
+        try
+        {
+            years = YearsFor(schedule, now);
+            error = null;
+            return true;
+        }
+        catch (ArgumentException ex)
+        {
+            years = [];
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static int[] ParseYearExpressions(string expressions, DateTime now)
+    {
+        var years = new List<int>();
+        foreach (var rawExpression in expressions.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            // Braces make expressions stand out in schedule text. Removing them also
+            // accepts both {{currentyear - 10}} and {{{{currentyear}} - 10}}.
+            var expression = rawExpression.Replace("{", string.Empty).Replace("}", string.Empty).Trim();
+            var match = Regex.Match(expression, @"^(?<base>currentyear|nextyear|previousyear|\d{1,4})(?:\s*(?<operator>[+-])\s*(?<amount>\d+))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!match.Success)
+                throw new ArgumentException($"Invalid year expression '{rawExpression}'. Use a year or {{currentyear}} with optional + or - math.");
+
+            var year = match.Groups["base"].Value.ToLowerInvariant() switch
+            {
+                "currentyear" => now.Year,
+                "nextyear" => now.Year + 1,
+                "previousyear" => now.Year - 1,
+                var literal => int.Parse(literal, CultureInfo.InvariantCulture)
+            };
+            if (match.Groups["operator"].Success)
+            {
+                var amount = int.Parse(match.Groups["amount"].Value, CultureInfo.InvariantCulture);
+                year += match.Groups["operator"].Value == "+" ? amount : -amount;
+            }
+            if (year is < 1 or > 9999) throw new ArgumentException($"Year expression '{rawExpression}' is outside the supported range.");
+            years.Add(year);
+        }
+        var result = years.Distinct().ToArray();
+        if (result.Length == 0) throw new ArgumentException("Enter at least one year expression.");
+        if (result.Length > 100) throw new ArgumentException("A schedule can contain at most 100 years.");
+        return result;
+    }
 
     public static string[] SeasonsFor(IntegrationSchedule schedule)
     {

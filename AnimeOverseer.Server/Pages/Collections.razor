@@ -38,7 +38,7 @@
                 </div>
                 @if (editType == CollectionType.Automatic)
                 {
-                    <div class="saved-filter"><h3>Collection filters</h3><FilterBuilder State="editFilters" OnChanged="FiltersChanged" AvailableGenres="genres" AvailableThemes="themes" AvailableDemographics="demographics" /></div>
+                    <div class="saved-filter"><h3>Collection filters</h3><p class="collection-expression-help">Use the <strong>{{ &#x1D453; }}</strong> Formulae button beside dynamic values. String filters support functions such as <code>{{replace(title, " ", "-")}}</code> and fields including <code>title</code>, <code>originalTitle</code>, <code>season</code>, <code>year</code>, IDs, dates, genres, themes, and demographics.</p><FilterBuilder State="editFilters" OnChanged="FiltersChanged" AvailableGenres="genres" AvailableThemes="themes" AvailableDemographics="demographics" AllowDynamicExpressions="true" /></div>
                 }
                 <div class="collection-editor-actions"><button class="btn btn-primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(editName)">Save collection</button><button class="btn" @onclick="CancelEdit">Cancel</button></div>
             </div>
