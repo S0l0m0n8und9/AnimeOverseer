@@ -41,6 +41,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<bool>("HasEnglishTitle")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("NamesReviewed")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 

@@ -33,6 +33,10 @@ public class Anime
     // Persisted so a later romaji-only sync cannot replace an English title.
     public bool HasEnglishTitle { get; set; }
 
+    // Once a user chooses a primary English name, stop offering this anime's
+    // remaining aliases in the name review queue.
+    public bool NamesReviewed { get; set; }
+
     // Provider-supplied English, romaji, native, and synonym titles used while
     // resolving the catalogue identity. They are retained as AnimeTitleAlias
     // rows after import so aliases from one provider can match future imports.

@@ -1,4 +1,5 @@
 using AnimeOverseer.Server.Models;
+using AnimeOverseer.Server.Services;
 using AnimeOverseer.Server.Tests.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -7,6 +8,21 @@ namespace AnimeOverseer.Server.Tests;
 
 public sealed class ReviewResolutionIntegrationTests : SqliteIntegrationTestBase
 {
+    [Fact]
+    public async Task Selecting_a_name_removes_it_from_the_name_review_queue()
+    {
+        await using var db = CreateDb();
+        var season = await AddSeasonAsync(db);
+        var anime = new Anime { AniListId = 1, Title = "Romaji Name", OriginalTitle = "English Name", SeasonId = season.Id };
+        db.Animes.Add(anime);
+        await db.SaveChangesAsync();
+        var reviews = new AnimeReviewService(db, CreateCache(db));
+
+        Assert.Equal(["English Name"], (await reviews.GetNamesPendingReviewAsync()).Single().Names);
+        Assert.True(await reviews.SetMainEnglishTitleAsync(anime.Id, "English Name"));
+        Assert.Empty(await reviews.GetNamesPendingReviewAsync());
+    }
+
     [Fact]
     public async Task Merge_review_keeps_english_primary_title_and_collects_incoming_aliases_and_images()
     {

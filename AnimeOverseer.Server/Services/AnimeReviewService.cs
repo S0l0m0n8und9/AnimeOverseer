@@ -10,6 +10,30 @@ public sealed class AnimeReviewService(AnimeDbContext db, AnimeCacheService cach
     public Task<int> GetPendingCountAsync() =>
         db.PendingAnimeReviews.CountAsync(review => review.Status == "Pending");
 
+    public async Task<List<AnimeNameReviewItem>> GetNamesPendingReviewAsync()
+    {
+        var anime = await db.Animes
+            .Include(item => item.Season)
+            .Include(item => item.Images)
+            .Include(item => item.TitleAliases)
+            .Where(item => !item.NamesReviewed)
+            .OrderBy(item => item.Title)
+            .ToListAsync();
+        return anime.Select(item => new AnimeNameReviewItem
+        {
+            Anime = item,
+            Names = new[] { item.OriginalTitle }
+                .Concat(item.TitleAliases.Select(alias => alias.Title))
+                .Where(name => !string.IsNullOrWhiteSpace(name) && !string.Equals(name, item.Title, StringComparison.OrdinalIgnoreCase))
+                .Select(name => name!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        }).Where(item => item.Names.Count > 0).ToList();
+    }
+
+    public async Task<int> GetPendingNameCountAsync() =>
+        (await GetNamesPendingReviewAsync()).Sum(item => item.Names.Count);
+
     public async Task<List<PendingAnimeReviewItem>> GetPendingAsync()
     {
         var reviews = await db.PendingAnimeReviews
@@ -52,6 +76,7 @@ public sealed class AnimeReviewService(AnimeDbContext db, AnimeCacheService cach
             db.AnimeTitleAliases.Add(new AnimeTitleAlias { AnimeId = anime.Id, Title = anime.Title });
         anime.Title = title;
         anime.HasEnglishTitle = true;
+        anime.NamesReviewed = true;
         await db.SaveChangesAsync();
         return true;
     }
@@ -83,4 +108,10 @@ public sealed class PendingAnimeReviewItem
     public PendingAnimeReview Review { get; init; } = null!;
     public AnimeImportSnapshot Incoming { get; init; } = new();
     public List<Anime> Candidates { get; init; } = [];
+}
+
+public sealed class AnimeNameReviewItem
+{
+    public Anime Anime { get; init; } = null!;
+    public List<string> Names { get; init; } = [];
 }

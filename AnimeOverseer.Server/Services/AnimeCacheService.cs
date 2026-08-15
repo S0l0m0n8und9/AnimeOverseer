@@ -352,6 +352,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         var candidates = Names(source)
             .Where(index.ContainsKey)
             .SelectMany(name => index[name])
+            .Where(candidate => !HasConflictingMalId(source, candidate))
             .Distinct()
             .ToList();
         if (candidates.Count > 0) return candidates;
@@ -361,7 +362,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         // A match must be unambiguous and use at least two meaningful tokens.
         var ranked = existingRows
             .Select(row => new { Anime = row, Score = BestAliasScore(source, row) })
-            .Where(x => x.Score >= 0.9)
+            .Where(x => x.Score >= 0.9 && !HasConflictingMalId(source, x.Anime))
             .OrderByDescending(x => x.Score)
             .ToList();
         return ranked.Select(x => x.Anime).ToList();
@@ -395,7 +396,10 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
 
     private static bool HasConflictingIds(Anime source, Anime candidate)
         => (source.AniListId is > 0 && candidate.AniListId is > 0 && source.AniListId != candidate.AniListId) ||
-           (source.MALId is > 0 && candidate.MALId is > 0 && source.MALId != candidate.MALId);
+           HasConflictingMalId(source, candidate);
+
+    private static bool HasConflictingMalId(Anime source, Anime candidate)
+        => source.MALId is > 0 && candidate.MALId is > 0 && source.MALId != candidate.MALId;
 
     private static AnimeImportSnapshot ToSnapshot(Anime source) => new()
     {

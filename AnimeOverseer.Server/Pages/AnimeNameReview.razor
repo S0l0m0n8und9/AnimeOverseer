@@ -1,0 +1,55 @@
+@using AnimeOverseer.Server.Services
+@inject AnimeReviewService ReviewService
+
+<div class="name-review-page">
+    <div class="review-heading"><div><h2>Review names</h2><p>Choose the primary English name for each catalogue entry. A name disappears from this list after it is selected.</p></div></div>
+    @if (_items is null) { <p class="review-muted">Loading names…</p> }
+    else if (_items.Count == 0) { <div class="review-empty"><h3>Nothing needs review</h3><p>All held names have already been selected or no alternate names are available.</p></div> }
+    else
+    {
+        <div class="name-review-list">
+            @foreach (var item in _items)
+            {
+                <article class="name-review-card">
+                    <a href="/anime/@item.Anime.Id" class="name-review-poster" title="Open @item.Anime.Title">
+                        @if (!string.IsNullOrWhiteSpace(item.Anime.DisplayImageUrl))
+                        {
+                            <img src="@(item.Anime.DisplayLocalImagePath ?? item.Anime.DisplayImageUrl)" alt="@item.Anime.Title poster" />
+                        }
+                        else
+                        {
+                            <span>🎬</span>
+                        }
+                    </a>
+                    <div class="name-review-current">
+                        <span class="review-label">Current name</span>
+                        <h3><a href="/anime/@item.Anime.Id">@item.Anime.Title</a></h3>
+                        <p>@item.Anime.Season.Year @item.Anime.Season.Name</p>
+                        <a class="review-record-link" href="/anime/@item.Anime.Id">Open record →</a>
+                    </div>
+                    <div class="name-review-choices">
+                        <span class="review-label">Available names</span>
+                        <div class="name-review-options">
+                            @foreach (var name in item.Names)
+                            {
+                                <div class="name-review-option"><span>@name</span><button @onclick="() => SelectNameAsync(item.Anime.Id, name)">Use this name</button></div>
+                            }
+                        </div>
+                        <div class="review-custom-name"><input value="@CustomName(item.Anime.Id)" @oninput="args => SetCustomName(item.Anime.Id, args.Value?.ToString())" placeholder="Custom English name" /><button @onclick="() => SelectCustomNameAsync(item.Anime.Id)">Use custom</button></div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<AnimeNameReviewItem>? _items;
+    private readonly Dictionary<int, string> _customNames = [];
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    private async Task ReloadAsync() => _items = await ReviewService.GetNamesPendingReviewAsync();
+    private async Task SelectNameAsync(int animeId, string name) { await ReviewService.SetMainEnglishTitleAsync(animeId, name); await ReloadAsync(); }
+    private string CustomName(int animeId) => _customNames.GetValueOrDefault(animeId, string.Empty);
+    private void SetCustomName(int animeId, string? name) => _customNames[animeId] = name ?? string.Empty;
+    private async Task SelectCustomNameAsync(int animeId) { var name = CustomName(animeId); if (string.IsNullOrWhiteSpace(name)) return; await ReviewService.SetMainEnglishTitleAsync(animeId, name, allowCustom: true); await ReloadAsync(); }
+}

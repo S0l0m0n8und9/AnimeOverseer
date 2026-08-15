@@ -53,6 +53,22 @@ public sealed class ImportIntegrationTests : SqliteIntegrationTestBase
     }
 
     [Fact]
+    public async Task Title_match_with_a_conflicting_mal_id_is_not_staged_for_review()
+    {
+        await using var db = CreateDb();
+        var season = await AddSeasonAsync(db);
+        db.Animes.Add(new Anime { AniListId = 81, MALId = 1001, Title = "Same Title", SeasonId = season.Id });
+        await db.SaveChangesAsync();
+        var incoming = Incoming(82, "Same Title", false);
+        incoming.MALId = 2002;
+
+        await CreateCache(db).FetchAndCacheSeasonsFromAsync(2026, ["fall"], (_, _, _) => Task.FromResult(new List<Anime> { incoming }));
+
+        Assert.Empty(await db.PendingAnimeReviews.ToListAsync());
+        Assert.Equal(2, await db.Animes.CountAsync());
+    }
+
+    [Fact]
     public async Task Reimport_replaces_tags_without_duplicate_join_rows()
     {
         await using var db = CreateDb();

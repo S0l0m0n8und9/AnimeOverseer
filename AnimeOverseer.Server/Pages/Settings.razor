@@ -46,6 +46,10 @@
            aria-selected="@(_activeTab == SettingsTab.Review)">
             Review matches (@FormatReviewMatchCount())
         </a>
+        <a role="tab" class="settings-tab @TabClass(SettingsTab.Names)" href="@TabUrl(SettingsTab.Names)"
+           aria-selected="@(_activeTab == SettingsTab.Names)">
+            Review names (@FormatReviewNameCount())
+        </a>
         <a role="tab" class="settings-tab @TabClass(SettingsTab.Library)" href="@TabUrl(SettingsTab.Library)"
            aria-selected="@(_activeTab == SettingsTab.Library)">
             Library
@@ -56,6 +60,11 @@
     @if (_activeTab == SettingsTab.Review)
     {
         <AnimeReview />
+    }
+
+    @if (_activeTab == SettingsTab.Names)
+    {
+        <AnimeNameReview />
     }
 
     @if (_activeTab == SettingsTab.Library)
@@ -580,7 +589,7 @@
 </div>
 
 @code {
-    private enum SettingsTab { Sources, Servers, History, Storage, Review, Library }
+    private enum SettingsTab { Sources, Servers, History, Storage, Review, Names, Library }
 
     [Parameter, SupplyParameterFromQuery(Name = "tab")]
     public string? Tab { get; set; }
@@ -594,6 +603,7 @@
     private bool _restartScheduleOnSave;
     private int _totalJobs;
     private int _pendingReviewCount;
+    private int _pendingNameReviewCount;
     private int _jobsPage = 1;
     private int _jobsPerPage = 10;
     private SettingsTab _activeTab = SettingsTab.Sources;
@@ -644,6 +654,7 @@
         SettingsTab.History => "/settings?tab=history",
         SettingsTab.Storage => "/settings?tab=storage",
         SettingsTab.Review => "/settings?tab=review",
+        SettingsTab.Names => "/settings?tab=names",
         SettingsTab.Library => "/settings?tab=library",
         _ => "/settings"
     };
@@ -658,6 +669,7 @@
             "history" => SettingsTab.History,
             "storage" => SettingsTab.Storage,
             "review" => SettingsTab.Review,
+            "names" => SettingsTab.Names,
             "library" => SettingsTab.Library,
             _ => SettingsTab.Sources
         };
@@ -668,6 +680,7 @@
         if (!firstRender) return;
         await Task.WhenAll(LoadJobsAsync(), LoadSettingsAsync(), LoadStorageUsageAsync(), LoadIntegrationSchedulesAsync());
         await LoadPendingReviewCountAsync();
+        await LoadPendingNameReviewCountAsync();
         StateHasChanged();
         StartPolling();
     }
@@ -726,7 +739,11 @@
     private async Task LoadPendingReviewCountAsync()
         => _pendingReviewCount = await AnimeReviewService.GetPendingCountAsync();
 
+    private async Task LoadPendingNameReviewCountAsync()
+        => _pendingNameReviewCount = await AnimeReviewService.GetPendingNameCountAsync();
+
     private string FormatReviewMatchCount() => _pendingReviewCount > 999 ? "999+" : _pendingReviewCount.ToString();
+    private string FormatReviewNameCount() => _pendingNameReviewCount > 999 ? "999+" : _pendingNameReviewCount.ToString();
 
     private int PageCount => Math.Max(1, (int)Math.Ceiling((double)_totalJobs / _jobsPerPage));
 
