@@ -51,8 +51,20 @@ public static class FilterQueryBuilder
 
     private static Expression? BuildCondition(FilterCondition c, ParameterExpression param)
     {
-        var val = c.Value.Trim();
         if (!FilterState.IsActiveCondition(c)) return null;
+
+        if (c.Operator is FilterOperator.ContainsData or FilterOperator.DoesNotContainData)
+            return BuildConditionValue(c, c.Value.Trim(), param);
+
+        var expressions = c.EffectiveValues.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => BuildConditionValue(c, value.Trim(), param)).OfType<Expression>().ToList();
+        if (expressions.Count == 0) return null;
+        return expressions.Count == 1 ? expressions[0] : expressions.Aggregate(c.ValueLogic == ValueLogic.All
+            ? (Func<Expression, Expression, Expression>)Expression.AndAlso : Expression.OrElse);
+    }
+
+    private static Expression? BuildConditionValue(FilterCondition c, string val, ParameterExpression param)
+    {
 
         var season = Expression.Property(param, "Season");
 

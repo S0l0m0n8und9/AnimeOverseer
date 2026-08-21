@@ -10,7 +10,7 @@ public class FilterState
 
     public static bool IsActiveCondition(FilterCondition condition) =>
         condition.Operator is FilterOperator.ContainsData or FilterOperator.DoesNotContainData ||
-        !string.IsNullOrEmpty(condition.Value);
+        condition.EffectiveValues.Any(value => !string.IsNullOrWhiteSpace(value));
 }
 
 public class FilterGroup
@@ -26,9 +26,16 @@ public class FilterCondition
     public FilterField Field { get; set; } = FilterField.Title;
     public FilterOperator Operator { get; set; } = FilterOperator.Contains;
     public string Value { get; set; } = string.Empty;
+    // Value remains for compatibility with existing collection JSON and dashboard URLs.
+    // New filters keep each entry independently so values can contain formulae too.
+    public List<string> Values { get; set; } = [];
+    public ValueLogic ValueLogic { get; set; } = ValueLogic.Any;
+
+    public IEnumerable<string> EffectiveValues => Values.Count > 0 ? Values : [Value];
 }
 
 public enum GroupLogic { And, Or }
+public enum ValueLogic { Any, All }
 
 public enum FilterField
 {

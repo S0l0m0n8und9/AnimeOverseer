@@ -47,6 +47,25 @@ public sealed class CollectionFilterExpressionResolverTests
         Assert.True(CollectionFilterExpressionResolver.RequiresAnimeContext(state));
     }
 
+    [Fact]
+    public void Resolves_every_value_in_a_multi_value_condition()
+    {
+        var state = new FilterState
+        {
+            Groups = [new FilterGroup { Conditions = [new FilterCondition
+            {
+                Field = FilterField.Genres,
+                Values = ["{{lower(\"ACTION\")}}", "{{upper(\"drama\")}}"],
+                ValueLogic = ValueLogic.All
+            }] }]
+        };
+
+        var resolved = CollectionFilterExpressionResolver.Resolve(state);
+
+        Assert.Equal(["action", "DRAMA"], resolved.Groups[0].Conditions[0].Values);
+        Assert.Equal(ValueLogic.All, resolved.Groups[0].Conditions[0].ValueLogic);
+    }
+
     [Theory]
     [InlineData("2026-08-01", "2026")]
     [InlineData("2026-10-01", "2027")]

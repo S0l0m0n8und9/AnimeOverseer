@@ -1,219 +1,43 @@
 @using AnimeOverseer.Server.Models
 
 <div class="filter-section">
-    <button class="filter-section-toggle @(State.IsActive ? "filter-section-toggle--active" : "")"
-            @onclick="ToggleExpanded">
-        <span class="filter-section-label">
-            @if (State.IsActive)
-            {
-                <span class="filter-badge">@State.ActiveCount</span>
-            }
-            Filters
-        </span>
-        <span class="filter-chevron @(expanded ? "filter-chevron--open" : "")">&#x276F;</span>
+    <button class="filter-section-toggle @(State.IsActive ? "filter-section-toggle--active" : "")" @onclick="ToggleExpanded">
+        <span class="filter-section-label">@if (State.IsActive) { <span class="filter-badge">@State.ActiveCount</span> } Filters</span><span class="filter-chevron @(expanded ? "filter-chevron--open" : "")">❯</span>
     </button>
-
     @if (expanded)
     {
         <div class="filter-body">
-            @for (int gi = 0; gi < State.Groups.Count; gi++)
+            @for (var index = 0; index < State.Groups.Count; index++)
             {
-                var g = State.Groups[gi];
-                var groupIndex = gi;
-
-                @if (gi > 0)
-                {
-                    <div class="group-connector">
-                        <button class="logic-pill @(State.TopLevelLogic == GroupLogic.And ? "logic-pill--and" : "logic-pill--or")"
-                                @onclick="ToggleTopLogic">
-                            @State.TopLevelLogic.ToString().ToUpper()
-                        </button>
-                    </div>
-                }
-
+                var group = State.Groups[index];
+                if (index > 0) { <div class="group-connector"><button class="logic-pill @(State.TopLevelLogic == GroupLogic.And ? "logic-pill--and" : "logic-pill--or")" @onclick="ToggleTopLogic">@State.TopLevelLogic.ToString().ToUpper()</button></div> }
                 <div class="filter-group">
-                    <div class="filter-group-header">
-                        <div class="group-logic-toggle">
-                            <button class="logic-btn @(g.Logic == GroupLogic.And ? "logic-btn--active" : "")"
-                                    @onclick="() => SetGroupLogic(g, GroupLogic.And)">AND</button>
-                            <button class="logic-btn @(g.Logic == GroupLogic.Or ? "logic-btn--active" : "")"
-                                    @onclick="() => SetGroupLogic(g, GroupLogic.Or)">OR</button>
-                        </div>
-                        @if (State.Groups.Count > 1)
-                        {
-                            <button class="condition-remove" @onclick="() => RemoveGroup(groupIndex)" title="Remove group">&#x2715;</button>
-                        }
-                    </div>
-
-                    @foreach (var condition in g.Conditions)
+                    <div class="filter-group-header"><div class="group-logic-toggle"><button class="logic-btn @(group.Logic == GroupLogic.And ? "logic-btn--active" : "")" @onclick="() => SetGroupLogic(group, GroupLogic.And)">AND</button><button class="logic-btn @(group.Logic == GroupLogic.Or ? "logic-btn--active" : "")" @onclick="() => SetGroupLogic(group, GroupLogic.Or)">OR</button></div>@if (State.Groups.Count > 1) { <button class="condition-remove" title="Remove group" @onclick="() => RemoveGroup(index)">✕</button> }</div>
+                    @foreach (var condition in group.Conditions)
                     {
                         var cond = condition;
                         <div class="condition-row">
-                            <select class="form-select condition-field"
-                                    value="@cond.Field"
-                                    @onchange="e => ChangeField(cond, e)">
-                                <option value="@FilterField.Title">Title</option>
-                                <option value="@FilterField.OriginalTitle">Original Title</option>
-                                <option value="@FilterField.Synopsis">Synopsis</option>
-                                <option value="@FilterField.Type">Type</option>
-                                <option value="@FilterField.Status">Status</option>
-                                <option value="@FilterField.Season">Season</option>
-                                <option value="@FilterField.Episodes">Episodes</option>
-                                <option value="@FilterField.Duration">Duration</option>
-                                <option value="@FilterField.Rating">Rating</option>
-                                <option value="@FilterField.Genres">Genres</option>
-                                <option value="@FilterField.Themes">Themes</option>
-                                <option value="@FilterField.Demographics">Demographics</option>
-                                <option value="@FilterField.Year">Year</option>
-                                <option value="@FilterField.MalId">MAL ID</option>
-                                <option value="@FilterField.AniListId">AniList ID</option>
-                                <option value="@FilterField.KitsuId">Kitsu ID</option>
-                                <option value="@FilterField.StartDate">Start Date</option>
-                                <option value="@FilterField.EndDate">End Date</option>
-                                <option value="@FilterField.CachedAt">Cached At</option>
-                                <option value="@FilterField.InLibrary">In Library</option>
-                            </select>
-
-                            <select class="form-select condition-op"
-                                    value="@cond.Operator"
-                                    @onchange="e => ChangeOperator(cond, e)">
-                                @foreach (var op in OperatorsFor(cond.Field))
-                                {
-                                    <option value="@op">@LabelFor(op)</option>
-                                }
-                            </select>
-
-                            @if (IsDataOperator(cond.Operator))
-                            {
-                                <span class="condition-value condition-value--data">No value needed</span>
-                            }
-                            else if (UsesExpressionInput(cond.Field) && HasSelectableValues(cond))
-                            {
-                                var values = SelectableValuesFor(cond);
-                                <div class="condition-value-with-formula">
-                                    <select class="form-select condition-value" value="@cond.Value" @onchange="e => ChangeValue(cond, e)">
-                                        <option value="">Any</option>
-                                        @if (!string.IsNullOrWhiteSpace(cond.Value) && !values.Contains(cond.Value))
-                                        {
-                                            <option value="@cond.Value">@cond.Value</option>
-                                        }
-                                        @foreach (var value in values)
-                                        {
-                                            <option value="@value">@value</option>
-                                        }
-                                    </select>
-                                    <button type="button" class="formulae-button @(formulaMenuFor == cond.Id ? "formulae-button--open" : "")" title="Insert a dynamic formula" aria-label="Formulae" @onclick="() => ToggleFormulaMenu(cond.Id)"><span class="formulae-icon" aria-hidden="true">&#123;&#123;&#x1D453;&#125;&#125;</span></button>
-                                    @if (formulaMenuFor == cond.Id)
-                                    {
-                                        <div class="formulae-menu">
-                                            <strong>Dynamic value</strong>
-                                            <label class="formulae-field-picker">Anime field
-                                                <select class="form-select" @onchange="e => ApplyFieldAsync(cond, e)">
-                                                    <option value="">Choose a field…</option>
-                                                    @foreach (var field in AnimeFields)
-                                                    {
-                                                        <option value="@field.Value">@field.Label</option>
-                                                    }
-                                                </select>
-                                            </label>
-                                            @foreach (var formula in FormulaeFor(cond.Field))
-                                            {
-                                                <button type="button" @onclick="() => ApplyFormulaAsync(cond, formula.Value)"><code>@formula.Value</code><span>@formula.Description</span></button>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else if (IsSelectField(cond.Field) && !UsesExpressionInput(cond.Field))
-                            {
-                                <select class="form-select condition-value"
-                                        value="@cond.Value"
-                                        @onchange="e => ChangeValue(cond, e)">
-                                    <option value="">Any</option>
-                                    @foreach (var v in SelectValuesFor(cond.Field))
-                                    {
-                                        <option value="@v">@v</option>
-                                    }
-                                </select>
-                            }
-                            else if (IsTagSelectField(cond) && TagValuesFor(cond).Count > 0 && !UsesExpressionInput(cond.Field))
-                            {
-                                <select class="form-select condition-value"
-                                        value="@cond.Value"
-                                        @onchange="e => ChangeValue(cond, e)">
-                                    <option value="">Any</option>
-                                    @foreach (var tag in TagValuesFor(cond))
-                                    {
-                                        <option value="@tag">@tag</option>
-                                    }
-                                </select>
-                            }
-                            else if (IsNumberField(cond.Field) && !UsesExpressionInput(cond.Field))
-                            {
-                                <input type="number" class="form-input condition-value"
-                                       placeholder="@PlaceholderFor(cond.Field)"
-                                       step="@(cond.Field == FilterField.Rating ? "0.1" : "1")"
-                                       min="0"
-                                       value="@cond.Value"
-                                       @onchange="e => ChangeValue(cond, e)" />
-                            }
-                            else if (IsDateField(cond.Field) && !UsesExpressionInput(cond.Field))
-                            {
-                                <input type="date" class="form-input condition-value"
-                                       value="@cond.Value"
-                                       @onchange="e => ChangeValue(cond, e)" />
-                            }
+                            <select class="form-select condition-field" value="@cond.Field" @onchange="e => ChangeField(cond, e)">@foreach (var field in Fields) { <option value="@field.Value">@field.Label</option> }</select>
+                            <select class="form-select condition-op" value="@cond.Operator" @onchange="e => ChangeOperator(cond, e)">@foreach (var op in OperatorsFor(cond.Field)) { <option value="@op">@LabelFor(op)</option> }</select>
+                            @if (IsDataOperator(cond.Operator)) { <span class="condition-value condition-value--data">No value needed</span> }
                             else
                             {
-                                <div class="condition-value-with-formula">
-                                    <input type="text" class="form-input condition-value"
-                                           placeholder="@(UsesExpressionInput(cond.Field) ? ExpressionPlaceholder(cond.Field) : "Value...")"
-                                           value="@cond.Value"
-                                           @oninput="e => ChangeValueImmediate(cond, e)" />
-                                    @if (UsesExpressionInput(cond.Field))
+                                <div class="condition-values">
+                                    @for (var valueIndex = 0; valueIndex < ValuesFor(cond).Count; valueIndex++)
                                     {
-                                        <button type="button" class="formulae-button @(formulaMenuFor == cond.Id ? "formulae-button--open" : "")" title="Insert a dynamic formula" aria-label="Formulae" @onclick="() => ToggleFormulaMenu(cond.Id)"><span class="formulae-icon" aria-hidden="true">&#123;&#123;&#x1D453;&#125;&#125;</span></button>
-                                        @if (formulaMenuFor == cond.Id)
-                                        {
-                                            <div class="formulae-menu">
-                                                <strong>Dynamic value</strong>
-                                                @if (IsStringField(cond.Field))
-                                                {
-                                                    <label class="formulae-field-picker">Anime field
-                                                        <select class="form-select" @onchange="e => ApplyFieldAsync(cond, e)">
-                                                            <option value="">Choose a field…</option>
-                                                            @foreach (var field in AnimeFields)
-                                                            {
-                                                                <option value="@field.Value">@field.Label</option>
-                                                            }
-                                                        </select>
-                                                    </label>
-                                                }
-                                                @foreach (var formula in FormulaeFor(cond.Field))
-                                                {
-                                                    <button type="button" @onclick="() => ApplyFormulaAsync(cond, formula.Value)"><code>@formula.Value</code><span>@formula.Description</span></button>
-                                                }
-                                            </div>
-                                        }
+                                        var currentIndex = valueIndex;
+                                        <div class="condition-value-row"><FilterValueEditor Value="@ValuesFor(cond)[currentIndex]" ValueChanged="value => ChangeValue(cond, currentIndex, value)" AllowDynamicExpressions="@UsesExpressionInput(cond.Field)" Placeholder="@PlaceholderFor(cond.Field)" Suggestions="@SuggestionsFor(cond)" />@if (ValuesFor(cond).Count > 1) { <button class="condition-remove" title="Remove value" @onclick="() => RemoveValue(cond, currentIndex)">✕</button> }</div>
                                     }
+                                    <div class="condition-value-actions"><button type="button" class="add-value-btn" @onclick="() => AddValue(cond)">+ Value</button>@if (ValuesFor(cond).Count > 1) { <span>Match</span><button class="value-logic-btn @(cond.ValueLogic == ValueLogic.Any ? "value-logic-btn--active" : "")" @onclick="() => SetValueLogic(cond, ValueLogic.Any)">any</button><button class="value-logic-btn @(cond.ValueLogic == ValueLogic.All ? "value-logic-btn--active" : "")" @onclick="() => SetValueLogic(cond, ValueLogic.All)">all</button> }</div>
                                 </div>
                             }
-
-                            <button class="condition-remove" @onclick="() => RemoveCondition(g, cond)" title="Remove">&#x2715;</button>
+                            <button class="condition-remove" title="Remove condition" @onclick="() => RemoveCondition(group, cond)">✕</button>
                         </div>
                     }
-
-                    <button class="add-condition-btn" @onclick="() => AddCondition(g)">&#x2B; Add Condition</button>
+                    <button class="add-condition-btn" @onclick="() => AddCondition(group)">+ Add Condition</button>
                 </div>
             }
-
-            <div class="filter-footer">
-                <button class="add-group-btn" @onclick="AddGroup">&#x2B; Add Group</button>
-                @if (State.IsActive)
-                {
-                    <button class="clear-filters-btn" @onclick="ClearAll">&#x2715; Clear All</button>
-                }
-            </div>
+            <div class="filter-footer"><button class="add-group-btn" @onclick="AddGroup">+ Add Group</button>@if (State.IsActive) { <button class="clear-filters-btn" @onclick="ClearAll">✕ Clear All</button> }</div>
         </div>
     }
 </div>
@@ -225,267 +49,31 @@
     [Parameter] public List<string> AvailableThemes { get; set; } = [];
     [Parameter] public List<string> AvailableDemographics { get; set; } = [];
     [Parameter] public bool AllowDynamicExpressions { get; set; }
-
-    private bool expanded = false;
-    private Guid? formulaMenuFor;
-
+    private bool expanded;
     private void ToggleExpanded() => expanded = !expanded;
-
-    private async Task Notify() => await OnChanged.InvokeAsync();
-
-    private async Task ToggleTopLogic()
-    {
-        State.TopLevelLogic = State.TopLevelLogic == GroupLogic.And ? GroupLogic.Or : GroupLogic.And;
-        await Notify();
-    }
-
-    private async Task SetGroupLogic(FilterGroup group, GroupLogic logic)
-    {
-        group.Logic = logic;
-        await Notify();
-    }
-
-    private async Task ChangeField(FilterCondition cond, ChangeEventArgs e)
-    {
-        cond.Field = Enum.Parse<FilterField>(e.Value!.ToString()!);
-        cond.Operator = OperatorsFor(cond.Field)[0];
-        cond.Value = string.Empty;
-        await Notify();
-    }
-
-    private async Task ChangeOperator(FilterCondition cond, ChangeEventArgs e)
-    {
-        cond.Operator = Enum.Parse<FilterOperator>(e.Value!.ToString()!);
-        await Notify();
-    }
-
-    private async Task ChangeValue(FilterCondition cond, ChangeEventArgs e)
-    {
-        cond.Value = e.Value?.ToString() ?? string.Empty;
-        await Notify();
-    }
-
-    private async Task ChangeValueImmediate(FilterCondition cond, ChangeEventArgs e)
-    {
-        cond.Value = e.Value?.ToString() ?? string.Empty;
-        await Notify();
-    }
-
-    private void ToggleFormulaMenu(Guid id) => formulaMenuFor = formulaMenuFor == id ? null : id;
-
-    private async Task ApplyFormulaAsync(FilterCondition condition, string value)
-    {
-        condition.Value = value;
-        formulaMenuFor = null;
-        await Notify();
-    }
-
-    private async Task ApplyFieldAsync(FilterCondition condition, ChangeEventArgs e)
-    {
-        var field = e.Value?.ToString();
-        if (string.IsNullOrEmpty(field)) return;
-        await ApplyFormulaAsync(condition, $"{{{{{field}}}}}");
-    }
-
-    private void AddCondition(FilterGroup group)
-    {
-        group.Conditions.Add(new FilterCondition());
-        OnChanged.InvokeAsync();
-    }
-
-    private async Task RemoveCondition(FilterGroup group, FilterCondition cond)
-    {
-        group.Conditions.Remove(cond);
-        if (group.Conditions.Count == 0)
-            group.Conditions.Add(new FilterCondition());
-        await Notify();
-    }
-
-    private async Task AddGroup()
-    {
-        State.Groups.Add(new FilterGroup());
-        await Notify();
-    }
-
-    private async Task RemoveGroup(int index)
-    {
-        State.Groups.RemoveAt(index);
-        await Notify();
-    }
-
-    private async Task ClearAll()
-    {
-        State.Groups.Clear();
-        State.Groups.Add(new FilterGroup());
-        State.TopLevelLogic = GroupLogic.And;
-        await Notify();
-    }
-
-    private List<string> TagValuesFor(FilterCondition c) => c.Field switch
-    {
-        FilterField.Themes       => AvailableThemes,
-        FilterField.Demographics => AvailableDemographics,
-        _                        => AvailableGenres
-    };
-
-    private bool HasSelectableValues(FilterCondition condition) =>
-        IsSelectField(condition.Field) || (IsTagSelectField(condition) && TagValuesFor(condition).Count > 0);
-
-    private List<string> SelectableValuesFor(FilterCondition condition) => IsSelectField(condition.Field)
-        ? SelectValuesFor(condition.Field).ToList()
-        : TagValuesFor(condition);
-
-    private static List<FilterOperator> OperatorsFor(FilterField field) => field switch
-    {
-        FilterField.Episodes or FilterField.Duration or FilterField.Rating or FilterField.Year or
-        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId => [
-            FilterOperator.ContainsData,
-            FilterOperator.DoesNotContainData,
-            FilterOperator.Equals,
-            FilterOperator.NotEquals,
-            FilterOperator.GreaterThan,
-            FilterOperator.GreaterThanOrEqual,
-            FilterOperator.LessThan,
-            FilterOperator.LessThanOrEqual
-        ],
-        FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt => [
-            FilterOperator.ContainsData,
-            FilterOperator.DoesNotContainData,
-            FilterOperator.Equals,
-            FilterOperator.NotEquals,
-            FilterOperator.GreaterThan,
-            FilterOperator.GreaterThanOrEqual,
-            FilterOperator.LessThan,
-            FilterOperator.LessThanOrEqual
-        ],
-        FilterField.InLibrary => [
-            FilterOperator.Equals,
-            FilterOperator.NotEquals
-        ],
-        FilterField.Type or FilterField.Status or FilterField.Season => [
-            FilterOperator.ContainsData,
-            FilterOperator.DoesNotContainData,
-            FilterOperator.Equals,
-            FilterOperator.NotEquals,
-            FilterOperator.Contains,
-            FilterOperator.NotContains
-        ],
-        _ => [
-            FilterOperator.ContainsData,
-            FilterOperator.DoesNotContainData,
-            FilterOperator.Contains,
-            FilterOperator.NotContains,
-            FilterOperator.StartsWith,
-            FilterOperator.EndsWith,
-            FilterOperator.Equals,
-            FilterOperator.NotEquals
-        ]
-    };
-
-    private static string LabelFor(FilterOperator op) => op switch
-    {
-        FilterOperator.ContainsData       => "contains data",
-        FilterOperator.DoesNotContainData => "does not contain data",
-        FilterOperator.Contains           => "contains",
-        FilterOperator.NotContains        => "not contains",
-        FilterOperator.StartsWith         => "starts with",
-        FilterOperator.EndsWith           => "ends with",
-        FilterOperator.Equals             => "=",
-        FilterOperator.NotEquals          => "≠",
-        FilterOperator.GreaterThan        => ">",
-        FilterOperator.LessThan           => "<",
-        FilterOperator.GreaterThanOrEqual => "≥",
-        FilterOperator.LessThanOrEqual    => "≤",
-        _                                 => op.ToString()
-    };
-
-    private static bool IsSelectField(FilterField f) =>
-        f is FilterField.Type or FilterField.Status or FilterField.Season or FilterField.InLibrary;
-
-    private static bool IsDataOperator(FilterOperator op) =>
-        op is FilterOperator.ContainsData or FilterOperator.DoesNotContainData;
-
-    private static bool IsTagSelectField(FilterCondition c) =>
-        c.Field is FilterField.Genres or FilterField.Themes or FilterField.Demographics &&
-        c.Operator is FilterOperator.Equals or FilterOperator.NotEquals;
-
-    private static bool IsNumberField(FilterField f) =>
-        f is FilterField.Episodes or FilterField.Duration or FilterField.Rating or FilterField.Year or
-        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId;
-
-    private static bool IsDateField(FilterField f) =>
-        f is FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt;
-
-    private bool UsesExpressionInput(FilterField field) => AllowDynamicExpressions &&
-        (field is FilterField.Year or FilterField.Season or FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt || IsStringField(field));
-
-    private static bool IsStringField(FilterField field) => field is FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or
-        FilterField.Type or FilterField.Status or FilterField.Season or FilterField.Genres or FilterField.Themes or FilterField.Demographics;
-
-    private static readonly (string Value, string Label)[] AnimeFields =
-    [
-        ("id", "ID"), ("title", "Title"), ("originalTitle", "Original title"), ("synopsis", "Synopsis"),
-        ("type", "Type"), ("status", "Status"), ("season", "Season"), ("year", "Year"),
-        ("episodes", "Episodes"), ("duration", "Duration"), ("rating", "Rating"),
-        ("malId", "MAL ID"), ("aniListId", "AniList ID"), ("kitsuId", "Kitsu ID"),
-        ("startDate", "Start date"), ("endDate", "End date"), ("cachedAt", "Cached at"),
-        ("genres", "Genres"), ("themes", "Themes"), ("demographics", "Demographics")
-    ];
-
-    private static string ExpressionPlaceholder(FilterField field) => field switch
-    {
-        FilterField.Year => "e.g. currentYear + 1",
-        FilterField.Season => "e.g. nextSeason",
-        FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or FilterField.Type or FilterField.Status or FilterField.Genres or FilterField.Themes or FilterField.Demographics => "e.g. {{replace(\"My Anime\", \" \", \"-\")}}",
-        _ => "e.g. today + 7d"
-    };
-
-    private static (string Value, string Description)[] FormulaeFor(FilterField field) => field switch
-    {
-        FilterField.Year => [
-            ("currentYear", "This calendar year"),
-            ("currentYear + 1", "One year ahead"),
-            ("currentYear - 1", "One year ago"),
-            ("nextYear", "Next calendar year"),
-            ("nextSeasonYear", "Calendar year of the next anime season"),
-            ("previousYear", "Previous calendar year")],
-        FilterField.Season => [
-            ("currentSeason", "The current anime season"),
-            ("nextSeason", "The following anime season"),
-            ("previousSeason", "The preceding anime season")],
-        FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or FilterField.Type or FilterField.Status or FilterField.Genres or FilterField.Themes or FilterField.Demographics => [
-            ("{{lower(\"Text\")}}", "Convert text to lowercase"),
-            ("{{upper(\"Text\")}}", "Convert text to uppercase"),
-            ("{{trim(\" Text \")}}", "Remove surrounding spaces"),
-            ("{{replace(\"My Anime\", \" \", \"-\")}}", "Replace text"),
-            ("{{concat(\"Part \", \"2\")}}", "Join text"),
-            ("{{substring(\"Anime\", 0, 3)}}", "Take part of text"),
-            ("{{title}}", "This anime's title"),
-            ("{{season}}", "This anime's season"),
-            ("{{year}}", "This anime's year")],
-        _ => [
-            ("today", "Today"),
-            ("today + 7d", "Seven days from today"),
-            ("today - 7d", "Seven days ago"),
-            ("currentDate", "Today")]
-    };
-
-    private static string PlaceholderFor(FilterField f) => f switch
-    {
-        FilterField.Episodes => "e.g. 12",
-        FilterField.Duration => "e.g. 24",
-        FilterField.Rating   => "e.g. 7.5",
-        FilterField.Year     => "e.g. 2024",
-        FilterField.MalId or FilterField.AniListId or FilterField.KitsuId => "e.g. 12345",
-        _                    => "Value..."
-    };
-
-    private static string[] SelectValuesFor(FilterField f) => f switch
-    {
-        FilterField.Type   => ["TV", "Movie", "OVA", "ONA", "Special", "Music"],
-        FilterField.Status => ["Currently Airing", "Finished Airing", "Not yet aired"],
-        FilterField.Season => ["spring", "summer", "fall", "winter"],
-        FilterField.InLibrary => ["Yes", "No"],
-        _                  => []
-    };
+    private Task Notify() => OnChanged.InvokeAsync();
+    private async Task ToggleTopLogic() { State.TopLevelLogic = State.TopLevelLogic == GroupLogic.And ? GroupLogic.Or : GroupLogic.And; await Notify(); }
+    private async Task SetGroupLogic(FilterGroup group, GroupLogic logic) { group.Logic = logic; await Notify(); }
+    private async Task ChangeField(FilterCondition cond, ChangeEventArgs e) { cond.Field = Enum.Parse<FilterField>(e.Value!.ToString()!); cond.Operator = OperatorsFor(cond.Field)[0]; cond.Value = string.Empty; cond.Values.Clear(); await Notify(); }
+    private async Task ChangeOperator(FilterCondition cond, ChangeEventArgs e) { cond.Operator = Enum.Parse<FilterOperator>(e.Value!.ToString()!); await Notify(); }
+    private List<string> ValuesFor(FilterCondition condition) { if (condition.Values.Count == 0) condition.Values.Add(condition.Value); return condition.Values; }
+    private async Task ChangeValue(FilterCondition cond, int index, string value) { ValuesFor(cond)[index] = value; cond.Value = cond.Values[0]; await Notify(); }
+    private async Task AddValue(FilterCondition cond) { ValuesFor(cond).Add(string.Empty); await Notify(); }
+    private async Task RemoveValue(FilterCondition cond, int index) { ValuesFor(cond).RemoveAt(index); cond.Value = cond.Values.FirstOrDefault() ?? string.Empty; await Notify(); }
+    private async Task SetValueLogic(FilterCondition cond, ValueLogic logic) { cond.ValueLogic = logic; await Notify(); }
+    private async Task RemoveCondition(FilterGroup group, FilterCondition cond) { group.Conditions.Remove(cond); if (group.Conditions.Count == 0) group.Conditions.Add(new FilterCondition()); await Notify(); }
+    private async Task AddCondition(FilterGroup group) { group.Conditions.Add(new FilterCondition()); await Notify(); }
+    private async Task AddGroup() { State.Groups.Add(new FilterGroup()); await Notify(); }
+    private async Task RemoveGroup(int index) { State.Groups.RemoveAt(index); await Notify(); }
+    private async Task ClearAll() { State.Groups = [new FilterGroup()]; State.TopLevelLogic = GroupLogic.And; await Notify(); }
+    private List<string> SuggestionsFor(FilterCondition condition) => condition.Field switch { FilterField.Themes => AvailableThemes, FilterField.Demographics => AvailableDemographics, FilterField.Genres => AvailableGenres, _ when IsSelectField(condition.Field) => SelectValuesFor(condition.Field).ToList(), _ => [] };
+    private static bool IsDataOperator(FilterOperator op) => op is FilterOperator.ContainsData or FilterOperator.DoesNotContainData;
+    private bool UsesExpressionInput(FilterField field) => AllowDynamicExpressions && (field is FilterField.Year or FilterField.Season or FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt || IsStringField(field));
+    private static bool IsStringField(FilterField field) => field is FilterField.Title or FilterField.OriginalTitle or FilterField.Synopsis or FilterField.Type or FilterField.Status or FilterField.Season or FilterField.Genres or FilterField.Themes or FilterField.Demographics;
+    private static List<FilterOperator> OperatorsFor(FilterField field) => field switch { FilterField.Episodes or FilterField.Duration or FilterField.Rating or FilterField.Year or FilterField.MalId or FilterField.AniListId or FilterField.KitsuId or FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt => [FilterOperator.ContainsData, FilterOperator.DoesNotContainData, FilterOperator.Equals, FilterOperator.NotEquals, FilterOperator.GreaterThan, FilterOperator.GreaterThanOrEqual, FilterOperator.LessThan, FilterOperator.LessThanOrEqual], FilterField.InLibrary => [FilterOperator.Equals, FilterOperator.NotEquals], FilterField.Type or FilterField.Status or FilterField.Season => [FilterOperator.ContainsData, FilterOperator.DoesNotContainData, FilterOperator.Equals, FilterOperator.NotEquals, FilterOperator.Contains, FilterOperator.NotContains], _ => [FilterOperator.ContainsData, FilterOperator.DoesNotContainData, FilterOperator.Contains, FilterOperator.NotContains, FilterOperator.StartsWith, FilterOperator.EndsWith, FilterOperator.Equals, FilterOperator.NotEquals] };
+    private static string LabelFor(FilterOperator op) => op switch { FilterOperator.ContainsData => "contains data", FilterOperator.DoesNotContainData => "does not contain data", FilterOperator.Contains => "contains", FilterOperator.NotContains => "not contains", FilterOperator.StartsWith => "starts with", FilterOperator.EndsWith => "ends with", FilterOperator.Equals => "=", FilterOperator.NotEquals => "≠", FilterOperator.GreaterThan => ">", FilterOperator.LessThan => "<", FilterOperator.GreaterThanOrEqual => "≥", FilterOperator.LessThanOrEqual => "≤", _ => op.ToString() };
+    private static string PlaceholderFor(FilterField field) => field switch { FilterField.Episodes => "e.g. 12", FilterField.Duration => "e.g. 24", FilterField.Rating => "e.g. 7.5", FilterField.Year => "e.g. 2024 or currentYear", FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt => "e.g. today - 30d", _ => "Value…" };
+    private static bool IsSelectField(FilterField field) => field is FilterField.Type or FilterField.Status or FilterField.Season or FilterField.InLibrary;
+    private static string[] SelectValuesFor(FilterField field) => field switch { FilterField.Type => ["TV", "Movie", "OVA", "ONA", "Special", "Music"], FilterField.Status => ["Currently Airing", "Finished Airing", "Not yet aired"], FilterField.Season => ["spring", "summer", "fall", "winter"], FilterField.InLibrary => ["Yes", "No"], _ => [] };
+    private static readonly (FilterField Value, string Label)[] Fields = [(FilterField.Title, "Title"), (FilterField.OriginalTitle, "Original Title"), (FilterField.Synopsis, "Synopsis"), (FilterField.Type, "Type"), (FilterField.Status, "Status"), (FilterField.Season, "Season"), (FilterField.Episodes, "Episodes"), (FilterField.Duration, "Duration"), (FilterField.Rating, "Rating"), (FilterField.Genres, "Genres"), (FilterField.Themes, "Themes"), (FilterField.Demographics, "Demographics"), (FilterField.Year, "Year"), (FilterField.MalId, "MAL ID"), (FilterField.AniListId, "AniList ID"), (FilterField.KitsuId, "Kitsu ID"), (FilterField.StartDate, "Start Date"), (FilterField.EndDate, "End Date"), (FilterField.CachedAt, "Cached At"), (FilterField.InLibrary, "In Library")];
 }

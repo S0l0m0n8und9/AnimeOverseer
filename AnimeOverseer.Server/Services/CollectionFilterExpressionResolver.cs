@@ -29,7 +29,9 @@ public static partial class CollectionFilterExpressionResolver
                     Id = condition.Id,
                     Field = condition.Field,
                     Operator = condition.Operator,
-                    Value = ResolveValue(condition.Field, condition.Value, date, anime)
+                    Value = ResolveValue(condition.Field, condition.Value, date, anime),
+                    Values = condition.Values.Select(value => ResolveValue(condition.Field, value, date, anime)).ToList(),
+                    ValueLogic = condition.ValueLogic
                 }).ToList()
             }).ToList()
         };
@@ -37,7 +39,7 @@ public static partial class CollectionFilterExpressionResolver
 
     public static bool RequiresAnimeContext(FilterState state) => state.Groups
         .SelectMany(group => group.Conditions)
-        .Any(condition => IsStringField(condition.Field) && condition.Value.Contains("{{", StringComparison.Ordinal));
+        .Any(condition => IsStringField(condition.Field) && condition.EffectiveValues.Any(value => value.Contains("{{", StringComparison.Ordinal)));
 
     private static string ResolveValue(FilterField field, string value, DateTime today, Anime? anime)
     {

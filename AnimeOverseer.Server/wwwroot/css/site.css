@@ -275,6 +275,13 @@ img {
 .collection-expression-help code { color: var(--accent-light); }
 .condition-value-with-formula { position: relative; display: flex; min-width: 0; gap: .35rem; }
 .condition-value-with-formula .condition-value { min-width: 0; }
+.condition-values { display: grid; flex: 1 1 16rem; min-width: 0; gap: .35rem; }
+.condition-value-row, .filter-value-editor, .condition-value-actions { display: flex; min-width: 0; align-items: center; gap: .35rem; }
+.filter-value-editor { flex: 1; }
+.filter-value-editor .condition-value { flex: 1; min-width: 0; }
+.condition-value-actions { color: var(--text-muted); font-size: .75rem; }
+.add-value-btn, .value-logic-btn { padding: .2rem .45rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; }
+.value-logic-btn--active { color: var(--text-primary); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .formulae-button { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 0 .5rem; color: var(--text-secondary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; font-size: .75rem; }
 .formulae-icon { font-size: .95rem; font-weight: 600; letter-spacing: -.05em; }
 .formulae-button:hover, .formulae-button--open { color: var(--text-primary); border-color: var(--accent); }
@@ -286,6 +293,13 @@ img {
 .formulae-menu button:hover { background: var(--bg-card-hover); }
 .formulae-menu code { color: var(--accent-light); }
 .formulae-menu span { color: var(--text-muted); font-size: .72rem; }
+.formula-dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(0, 0, 0, .62); }
+.formula-dialog { width: min(42rem, 100%); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.1rem; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+.formula-dialog header, .formula-dialog footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.formula-dialog h3 { margin: 0; }.formula-dialog p, .formula-dialog small { color: var(--text-muted); }.formula-dialog-input { box-sizing: border-box; width: 100%; margin: 1rem 0; }
+.formula-dialog-section { margin-top: 1rem; }.formula-token-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
+.formula-token-list button { padding: .35rem .5rem; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; }.formula-token-list button:hover { border-color: var(--accent); }
+.formula-dialog footer { justify-content: flex-end; align-items: center; margin-top: 1.2rem; }
 .collection-anime { position: relative; }
 .collection-remove { position: absolute; top: .5rem; right: .5rem; z-index: 2; border: 0; border-radius: .25rem; padding: .35rem .5rem; background: rgba(0,0,0,.8); color: white; cursor: pointer; }
 .btn-danger { background: #b42318; color: white; }

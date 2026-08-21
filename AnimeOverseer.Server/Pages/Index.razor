@@ -49,7 +49,8 @@
         <FilterBuilder State="filterState" OnChanged="OnFilterChanged"
             AvailableGenres="AvailableGenres"
             AvailableThemes="AvailableThemes"
-            AvailableDemographics="AvailableDemographics" />
+            AvailableDemographics="AvailableDemographics"
+            AllowDynamicExpressions="true" />
         <SortBuilder State="sortState" OnChanged="OnSortChanged" />
     </div>
 
@@ -300,14 +301,15 @@
 
                 await MediaLibraryService.EnsureRefreshedAsync();
                 var libraryFilterCandidates = await AnimeDataSource.GetFilteredAsync(new FilterState(), 0, int.MaxValue);
-                allAnimes = FilterEngine.Apply(libraryFilterCandidates, filterState, IsInLibrary);
+                allAnimes = FilterEngine.Apply(libraryFilterCandidates, CollectionFilterExpressionResolver.Resolve(filterState), IsInLibrary);
                 totalCount = allAnimes.Count;
                 return;
             }
 
             var skip  = append ? allAnimes.Count : 0;
-            var items = await AnimeDataSource.GetFilteredAsync(filterState, skip, pageSize);
-            if (!append) totalCount = await AnimeDataSource.GetFilteredCountAsync(filterState);
+            var resolvedFilters = CollectionFilterExpressionResolver.Resolve(filterState);
+            var items = await AnimeDataSource.GetFilteredAsync(resolvedFilters, skip, pageSize);
+            if (!append) totalCount = await AnimeDataSource.GetFilteredCountAsync(resolvedFilters);
             if (append) allAnimes.AddRange(items);
             else        allAnimes = items;
         }
@@ -661,8 +663,8 @@
                 {
                     l = (int)g.Logic,
                     c = g.Conditions
-                        .Where(c => !string.IsNullOrEmpty(c.Value))
-                        .Select(c => new { f = (int)c.Field, o = (int)c.Operator, v = c.Value })
+                        .Where(FilterState.IsActiveCondition)
+                        .Select(c => new { f = (int)c.Field, o = (int)c.Operator, v = c.Value, vs = c.Values, vl = (int)c.ValueLogic })
                         .ToArray()
                 })
                 .Where(g => g.c.Length > 0)
@@ -712,7 +714,9 @@
                     {
                         Field    = (FilterField)c.GetProperty("f").GetInt32(),
                         Operator = (FilterOperator)c.GetProperty("o").GetInt32(),
-                        Value    = c.GetProperty("v").GetString() ?? string.Empty
+                        Value    = c.GetProperty("v").GetString() ?? string.Empty,
+                        Values   = c.TryGetProperty("vs", out var values) ? values.EnumerateArray().Select(value => value.GetString() ?? string.Empty).ToList() : [],
+                        ValueLogic = c.TryGetProperty("vl", out var valueLogic) ? (ValueLogic)valueLogic.GetInt32() : ValueLogic.Any
                     }).ToList()
                 }).ToList()
             };

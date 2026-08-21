@@ -29,8 +29,19 @@ public static class FilterEngine
 
     private static bool MatchCondition(Anime anime, FilterCondition c, Func<Anime, bool>? isInLibrary)
     {
-        var val = c.Value.Trim();
         if (!FilterState.IsActiveCondition(c)) return true;
+
+        if (c.Operator is FilterOperator.ContainsData or FilterOperator.DoesNotContainData)
+            return MatchConditionValue(anime, c, c.Value.Trim(), isInLibrary);
+
+        var values = c.EffectiveValues.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+        return c.ValueLogic == ValueLogic.All
+            ? values.All(value => MatchConditionValue(anime, c, value.Trim(), isInLibrary))
+            : values.Any(value => MatchConditionValue(anime, c, value.Trim(), isInLibrary));
+    }
+
+    private static bool MatchConditionValue(Anime anime, FilterCondition c, string val, Func<Anime, bool>? isInLibrary)
+    {
 
         return c.Field switch
         {

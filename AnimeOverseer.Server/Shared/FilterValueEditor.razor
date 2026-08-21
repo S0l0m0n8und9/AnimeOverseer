@@ -1,0 +1,88 @@
+@using AnimeOverseer.Server.Models
+
+<div class="filter-value-editor">
+    <input class="form-input condition-value" list="@ListId" placeholder="@Placeholder" value="@Value" @oninput="ChangeValue" />
+    @if (Suggestions.Count > 0)
+    {
+        <datalist id="@ListId">
+            @foreach (var suggestion in Suggestions)
+            {
+                <option value="@suggestion" />
+            }
+        </datalist>
+    }
+    @if (AllowDynamicExpressions)
+    {
+        <button type="button" class="formulae-button" title="Build a formula" aria-label="Build a formula" @onclick="OpenDialog"><span class="formulae-icon" aria-hidden="true">{{𝑓}}</span></button>
+    }
+</div>
+
+@if (isOpen)
+{
+    <div class="formula-dialog-backdrop" @onclick="CloseDialog">
+        <section class="formula-dialog" role="dialog" aria-modal="true" aria-labelledby="formula-dialog-title" @onclick:stopPropagation="true">
+            <header><div><h3 id="formula-dialog-title">Build dynamic value</h3><p>Combine a field with one or more functions, then apply it to this value.</p></div><button class="condition-remove" title="Close" @onclick="CloseDialog">✕</button></header>
+            <input class="form-input formula-dialog-input" @bind="draft" @bind:event="oninput" placeholder="e.g. {{upper(replace(title, &quot; &quot;, &quot;-&quot;))}}" />
+            <div class="formula-dialog-section">
+                <strong>Anime fields</strong>
+                <div class="formula-token-list">
+                    @foreach (var field in AnimeFields)
+                    {
+                        <button type="button" @onclick="() => SetField(field.Value)">@field.Label</button>
+                    }
+                </div>
+            </div>
+            <div class="formula-dialog-section">
+                <strong>Wrap with a function</strong>
+                <div class="formula-token-list">
+                    @foreach (var function in Functions)
+                    {
+                        <button type="button" @onclick="() => Wrap(function.Value)"><code>@function.Label</code></button>
+                    }
+                </div>
+                <small>Each click wraps the current formula, so functions can be composed.</small>
+            </div>
+            <footer><button class="btn" @onclick="CloseDialog">Cancel</button><button class="btn btn-primary" @onclick="Apply">Use value</button></footer>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool AllowDynamicExpressions { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Value…";
+    [Parameter] public List<string> Suggestions { get; set; } = [];
+
+    private readonly string ListId = $"filter-values-{Guid.NewGuid():N}";
+    private bool isOpen;
+    private string draft = string.Empty;
+    private async Task ChangeValue(ChangeEventArgs e) => await ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    private void OpenDialog() { draft = Value; isOpen = true; }
+    private void CloseDialog() => isOpen = false;
+    private async Task Apply() { await ValueChanged.InvokeAsync(draft); isOpen = false; }
+    private void SetField(string value) => draft = $"{{{{{value}}}}}";
+    private void Wrap(string function)
+    {
+        var inner = draft.Trim();
+        if (inner.StartsWith("{{") && inner.EndsWith("}}") && inner.Length >= 4) inner = inner[2..^2];
+        else inner = $"\"{inner.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+        var expression = function switch
+        {
+            "replace" => $"replace({inner}, \"\", \"\")",
+            "concat" => $"concat({inner}, \"\")",
+            "substring" => $"substring({inner}, 0, 1)",
+            _ => $"{function}({inner})"
+        };
+        draft = $"{{{{{expression}}}}}";
+    }
+    private static readonly (string Value, string Label)[] AnimeFields =
+    [
+        ("title", "Title"), ("originalTitle", "Original title"), ("synopsis", "Synopsis"), ("type", "Type"), ("status", "Status"),
+        ("season", "Season"), ("year", "Year"), ("episodes", "Episodes"), ("duration", "Duration"), ("rating", "Rating"),
+        ("malId", "MAL ID"), ("aniListId", "AniList ID"), ("kitsuId", "Kitsu ID"), ("startDate", "Start date"), ("endDate", "End date"),
+        ("cachedAt", "Cached at"), ("genres", "Genres"), ("themes", "Themes"), ("demographics", "Demographics")
+    ];
+    private static readonly (string Value, string Label)[] Functions =
+    [ ("lower", "lower"), ("upper", "upper"), ("trim", "trim"), ("replace", "replace"), ("concat", "concat"), ("substring", "substring") ];
+}
