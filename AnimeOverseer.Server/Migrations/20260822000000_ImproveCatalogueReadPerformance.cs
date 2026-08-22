@@ -12,11 +12,14 @@ public partial class ImproveCatalogueReadPerformance : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.CreateIndex(name: "IX_Animes_StartDate", table: "Animes", column: "StartDate");
-        migrationBuilder.CreateIndex(name: "IX_Animes_AniListId", table: "Animes", column: "AniListId");
-        migrationBuilder.CreateIndex(name: "IX_Animes_MALId", table: "Animes", column: "MALId");
-        migrationBuilder.CreateIndex(name: "IX_Seasons_Year_Name", table: "Seasons", columns: new[] { "Year", "Name" }, unique: true);
-        migrationBuilder.CreateIndex(name: "IX_CachedAnimeRelations_RootMalId", table: "CachedAnimeRelations", column: "RootMalId");
+        // A failed SQLite migration can leave an earlier DDL statement in place
+        // before the migration-history row is committed. These guards allow a
+        // safe retry without requiring the operator to edit the database.
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_Animes_StartDate\" ON \"Animes\" (\"StartDate\");");
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_Animes_AniListId\" ON \"Animes\" (\"AniListId\");");
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_Animes_MALId\" ON \"Animes\" (\"MALId\");");
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_Seasons_Year_Name\" ON \"Seasons\" (\"Year\", \"Name\");");
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_CachedAnimeRelations_RootMalId\" ON \"CachedAnimeRelations\" (\"RootMalId\");");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

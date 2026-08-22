@@ -483,8 +483,7 @@ namespace AnimeOverseer.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Year", "Name")
-                        .IsUnique();
+                    b.HasIndex("Year", "Name");
 
                     b.ToTable("Seasons");
                 });

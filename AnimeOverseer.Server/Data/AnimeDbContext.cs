@@ -110,7 +110,10 @@ public class AnimeDbContext : DbContext
         modelBuilder.Entity<Anime>().HasIndex(anime => anime.StartDate);
         modelBuilder.Entity<Anime>().HasIndex(anime => anime.AniListId);
         modelBuilder.Entity<Anime>().HasIndex(anime => anime.MALId);
-        modelBuilder.Entity<Season>().HasIndex(season => new { season.Year, season.Name }).IsUnique();
+        // Older catalogues can contain duplicate season rows. Keep this as a
+        // lookup index until a deliberate data-merge migration can reconcile
+        // those records safely.
+        modelBuilder.Entity<Season>().HasIndex(season => new { season.Year, season.Name });
         modelBuilder.Entity<CachedAnimeRelation>().HasIndex(relation => relation.RootMalId);
 
         modelBuilder.Entity<Genre>().HasIndex(g => g.Name).IsUnique();
