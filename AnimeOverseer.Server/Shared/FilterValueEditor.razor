@@ -1,15 +1,32 @@
 @using AnimeOverseer.Server.Models
 
 <div class="filter-value-editor">
-    <input class="form-input condition-value" list="@ListId" placeholder="@Placeholder" value="@Value" @oninput="ChangeValue" />
-    @if (Suggestions.Count > 0)
+    @if (UseOptionSet)
     {
-        <datalist id="@ListId">
-            @foreach (var suggestion in Suggestions)
+        <select class="form-select condition-value" value="@Value" @onchange="ChangeValue">
+            <option value="">@Placeholder</option>
+            @foreach (var option in Suggestions)
             {
-                <option value="@suggestion" />
+                <option value="@option">@option</option>
             }
-        </datalist>
+            @if (!string.IsNullOrEmpty(Value) && !Suggestions.Contains(Value))
+            {
+                <option value="@Value">@Value</option>
+            }
+        </select>
+    }
+    else
+    {
+        <input class="form-input condition-value" list="@ListId" placeholder="@Placeholder" value="@Value" @oninput="ChangeValue" />
+        @if (Suggestions.Count > 0)
+        {
+            <datalist id="@ListId">
+                @foreach (var suggestion in Suggestions)
+                {
+                    <option value="@suggestion" />
+                }
+            </datalist>
+        }
     }
     @if (AllowDynamicExpressions)
     {
@@ -51,6 +68,7 @@
     [Parameter] public string Value { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public bool AllowDynamicExpressions { get; set; }
+    [Parameter] public bool UseOptionSet { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Value…";
     [Parameter] public List<string> Suggestions { get; set; } = [];
 
