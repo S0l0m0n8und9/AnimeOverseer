@@ -228,9 +228,15 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
     private sealed class ImportFailures(string source, ILogger logger, AnimeDbContext db, SyncJob job)
     {
         private const int MaxRepresentativeFailures = 3;
+        private const int ConsecutiveUnexpectedFailureLimit = 20;
+        private const int FailureRateSampleSize = 100;
         private readonly List<string> representativeMessages = [];
         public int Count { get; private set; }
+        public int UnexpectedCount { get; private set; }
+        public int ConsecutiveUnexpectedCount { get; private set; }
         public string ProgressSuffix => Count == 0 ? "" : $" ({Count} errors)";
+
+        public void RecordSuccess() => ConsecutiveUnexpectedCount = 0;
 
         public void Record(Anime anime, Exception exception)
         {
@@ -245,6 +251,17 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         private void Record(string item, Exception exception)
         {
             Count++;
+            if (IsUnexpected(exception))
+            {
+                UnexpectedCount++;
+                ConsecutiveUnexpectedCount++;
+            }
+            else
+            {
+                // Expected bad-record failures do not contribute to an outage streak.
+                ConsecutiveUnexpectedCount = 0;
+            }
+
             var message = $"{source} item {item} failed ({exception.GetType().Name})";
             logger.LogError("{Source} sync item failed. JobId: {JobId}; Item: {Item}; ErrorType: {ErrorType}; Details: {Details}",
                 source, job.Id, item, exception.GetType().Name, Redact(exception.ToString()));
@@ -256,6 +273,17 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             }
         }
 
+        public string? CircuitBreakerReason(int processed)
+        {
+            if (ConsecutiveUnexpectedCount >= ConsecutiveUnexpectedFailureLimit)
+                return $"Stopped after {ConsecutiveUnexpectedCount} consecutive unexpected failures";
+
+            if (processed >= FailureRateSampleSize && UnexpectedCount * 2 > processed)
+                return $"Stopped because {UnexpectedCount:N0} of {processed:N0} records had unexpected failures";
+
+            return null;
+        }
+
         public string Summary(int processed)
             => Count == 0
                 ? $"Sync complete — {processed:N0} processed"
@@ -265,6 +293,10 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             => Regex.Replace(value,
                 @"(?i)((?:access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret|authorization|bearer)\s*(?:=|:|\s)\s*)[^\s,;&]+",
                 "$1[REDACTED]");
+
+        private static bool IsUnexpected(Exception exception)
+            => exception is not ArgumentException &&
+               exception is not HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound };
     }
 
     public Task RunMyAnimeListSyncAsync(SyncJob job, CancellationToken ct)
@@ -296,6 +328,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
                 await cache.FetchAndStoreRecommendationsAsync(animeId, ct);
                 syncedIds.Add(animeId);
+                failures.RecordSuccess();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -310,6 +343,12 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             job.ProcessedCount++;
             if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
+            if (failures.CircuitBreakerReason(job.ProcessedCount) is { } circuitBreakerReason)
+            {
+                Log(job, circuitBreakerReason, "Error");
+                await db.SaveChangesAsync(ct);
+                throw new InvalidOperationException(circuitBreakerReason);
+            }
             // Save every attempted source ID so a record-specific failure does not
             // prevent the rest of this run from completing.
             await db.SaveChangesAsync(ct);
@@ -342,6 +381,7 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
                 var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
                 await cache.FetchAndStoreRelationsAsync(animeId, ct);
                 syncedIds.Add(animeId);
+                failures.RecordSuccess();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -356,6 +396,12 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
             job.ProcessedCount++;
             if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
                 Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
+            if (failures.CircuitBreakerReason(job.ProcessedCount) is { } circuitBreakerReason)
+            {
+                Log(job, circuitBreakerReason, "Error");
+                await db.SaveChangesAsync(ct);
+                throw new InvalidOperationException(circuitBreakerReason);
+            }
             await db.SaveChangesAsync(ct);
         }
         Log(job, failures.Summary(job.ProcessedCount), failures.Count > 0 ? "Warning" : "Success");
