@@ -107,6 +107,12 @@ public class AnimeDbContext : DbContext
         modelBuilder.Entity<PendingAnimeReview>()
             .HasIndex(review => new { review.Status, review.CreatedAt });
 
+        modelBuilder.Entity<Anime>().HasIndex(anime => anime.StartDate);
+        modelBuilder.Entity<Anime>().HasIndex(anime => anime.AniListId);
+        modelBuilder.Entity<Anime>().HasIndex(anime => anime.MALId);
+        modelBuilder.Entity<Season>().HasIndex(season => new { season.Year, season.Name }).IsUnique();
+        modelBuilder.Entity<CachedAnimeRelation>().HasIndex(relation => relation.RootMalId);
+
         modelBuilder.Entity<Genre>().HasIndex(g => g.Name).IsUnique();
         modelBuilder.Entity<Theme>().HasIndex(t => t.Name).IsUnique();
         modelBuilder.Entity<Demographic>().HasIndex(d => d.Name).IsUnique();

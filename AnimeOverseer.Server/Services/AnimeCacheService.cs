@@ -1,6 +1,7 @@
 using AnimeOverseer.Server.Data;
 using AnimeOverseer.Server.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -8,31 +9,49 @@ using System.Text.Json;
 namespace AnimeOverseer.Server.Services;
 
 /// <summary>The database is the catalogue identity boundary; provider IDs are optional metadata.</summary>
-public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, JikanApiService jikan, ImageCacheService imageCache) : IAnimeDataSource
+public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, JikanApiService jikan, ImageCacheService imageCache, IMemoryCache memoryCache) : IAnimeDataSource
 {
     private static readonly string[] AllSeasons = ["spring", "summer", "fall", "winter"];
-    private IQueryable<Anime> Query() => db.Animes.Include(a => a.Season).Include(a => a.Images).Include(a => a.TitleAliases).Include(a => a.AnimeGenres).ThenInclude(x => x.Genre).Include(a => a.AnimeThemes).ThenInclude(x => x.Theme).Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
+    private const string GenreNamesCacheKey = "catalogue:genre-names";
+    private const string ThemeNamesCacheKey = "catalogue:theme-names";
+    private const string DemographicNamesCacheKey = "catalogue:demographic-names";
+
+    // Catalogue cards need tags for local NSFW/library filtering, but never title
+    // aliases or every artwork variant. Split queries avoid multiplying each card
+    // by its tags and images in one large joined result set.
+    private IQueryable<Anime> CardQuery() => db.Animes.AsNoTracking().AsSplitQuery()
+        .Include(a => a.Season)
+        .Include(a => a.Images.Where(image => image.Id == image.Anime.PreferredImageId))
+        .Include(a => a.AnimeGenres).ThenInclude(x => x.Genre)
+        .Include(a => a.AnimeThemes).ThenInclude(x => x.Theme)
+        .Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
+
+    private IQueryable<Anime> DetailQuery() => db.Animes.AsNoTracking().AsSplitQuery()
+        .Include(a => a.Season).Include(a => a.Images).Include(a => a.TitleAliases)
+        .Include(a => a.AnimeGenres).ThenInclude(x => x.Genre)
+        .Include(a => a.AnimeThemes).ThenInclude(x => x.Theme)
+        .Include(a => a.AnimeDemographics).ThenInclude(x => x.Demographic);
 
     public async Task<List<Anime>> GetSeasonAnimes(int year, string season, bool forceRefresh = false)
     {
         if (!forceRefresh)
         {
-            var cached = await Query().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
+            var cached = await DetailQuery().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
             if (cached.Count > 0) return cached;
         }
         await FetchAndCacheSeasonsAsync(year, [season]);
-        return await Query().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
+        return await DetailQuery().Where(a => a.Season.Year == year && a.Season.Name == season).ToListAsync();
     }
 
     public async Task<List<Anime>> SearchAsync(string search)
     {
-        var local = await Query().Where(a => a.Title.Contains(search) || (a.OriginalTitle != null && a.OriginalTitle.Contains(search))).ToListAsync();
+        var local = await DetailQuery().Where(a => a.Title.Contains(search) || (a.OriginalTitle != null && a.OriginalTitle.Contains(search))).Take(50).ToListAsync();
         try
         {
             var remote = await aniList.SearchAsync(search);
             await UpsertAsync(remote, null);
             var ids = remote.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).ToList();
-            var fetched = await Query().Where(a => a.AniListId != null && ids.Contains(a.AniListId.Value)).ToListAsync();
+            var fetched = await DetailQuery().Where(a => a.AniListId != null && ids.Contains(a.AniListId.Value)).Take(50).ToListAsync();
             return local.Concat(fetched).GroupBy(a => a.Id).Select(g => g.First()).OrderBy(a => a.Title).ToList();
         }
         catch { return local; }
@@ -41,12 +60,12 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
     // id is always this application's Anime.Id, never a provider ID.
     public async Task<Anime?> GetByIdAsync(int id, bool forceRefresh = false)
     {
-        var cached = await Query().FirstOrDefaultAsync(a => a.Id == id);
+        var cached = await DetailQuery().FirstOrDefaultAsync(a => a.Id == id);
         if (cached == null || !forceRefresh || cached.AniListId is not > 0) return cached;
         var remote = await aniList.GetByAniListIdAsync(cached.AniListId.Value);
         if (remote == null) return cached;
         await UpsertAsync([remote], cached.SeasonId);
-        return await Query().FirstOrDefaultAsync(a => a.Id == id);
+        return await DetailQuery().FirstOrDefaultAsync(a => a.Id == id);
     }
 
     public async Task<bool> SetPreferredImageAsync(int animeId, int imageId)
@@ -220,18 +239,32 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         return localIds.Count;
     }
 
-    public Task<List<Anime>> GetRecentAsync(int skip, int take) => Query().OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
+    public Task<List<Anime>> GetRecentAsync(int skip, int take) => CardQuery().OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
     public Task<int> GetTotalCountAsync() => db.Animes.CountAsync();
-    public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => FilterQueryBuilder.Apply(Query(), state).OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
-    public Task<int> GetFilteredCountAsync(FilterState state) => FilterQueryBuilder.Apply(Query(), state).CountAsync();
-    public Task<List<string>> GetGenreNamesAsync() => db.Genres.Select(x => x.Name).OrderBy(x => x).ToListAsync();
-    public Task<List<string>> GetThemeNamesAsync() => db.Themes.Select(x => x.Name).OrderBy(x => x).ToListAsync();
-    public Task<List<string>> GetDemographicNamesAsync() => db.Demographics.Select(x => x.Name).OrderBy(x => x).ToListAsync();
-    public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take) => Query().OrderByDescending(a => a.Requests.Count).Skip(skip).Take(take).ToListAsync();
+    public Task<List<Anime>> GetFilteredAsync(FilterState state, int skip, int take) => FilterQueryBuilder.Apply(CardQuery(), state).OrderByDescending(a => a.StartDate).Skip(skip).Take(take).ToListAsync();
+    public Task<int> GetFilteredCountAsync(FilterState state) => FilterQueryBuilder.Apply(db.Animes.AsNoTracking(), state).CountAsync();
+    public Task<List<string>> GetGenreNamesAsync() => GetCachedNamesAsync(GenreNamesCacheKey, db.Genres);
+    public Task<List<string>> GetThemeNamesAsync() => GetCachedNamesAsync(ThemeNamesCacheKey, db.Themes);
+    public Task<List<string>> GetDemographicNamesAsync() => GetCachedNamesAsync(DemographicNamesCacheKey, db.Demographics);
+    public Task<List<Anime>> GetMostFavoritedAsync(int skip, int take) => CardQuery().OrderByDescending(a => a.Requests.Count).Skip(skip).Take(take).ToListAsync();
     public Task<int> GetMostFavoritedCountAsync() => db.Animes.CountAsync();
     public Task<List<Genre>> GetAllGenresAsync() => db.Genres.OrderBy(x => x.Name).ToListAsync();
     public Task<List<Theme>> GetAllThemesAsync() => db.Themes.OrderBy(x => x.Name).ToListAsync();
     public Task<List<Demographic>> GetAllDemographicsAsync() => db.Demographics.OrderBy(x => x.Name).ToListAsync();
+
+    private Task<List<string>> GetCachedNamesAsync<TTag>(string key, IQueryable<TTag> tags) where TTag : class
+        => memoryCache.GetOrCreateAsync(key, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30);
+            return await tags.Select(tag => EF.Property<string>(tag, "Name")).OrderBy(name => name).ToListAsync();
+        })!;
+
+    private void InvalidateLookupCaches()
+    {
+        memoryCache.Remove(GenreNamesCacheKey);
+        memoryCache.Remove(ThemeNamesCacheKey);
+        memoryCache.Remove(DemographicNamesCacheKey);
+    }
 
     /// <summary>Applies a human decision for a staged title/alias match.</summary>
     public async Task<bool> ResolvePendingReviewAsync(int reviewId, string decision, int? candidateAnimeId = null, CancellationToken ct = default)
@@ -281,10 +314,20 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
     {
         var aniListIds = incoming.Where(a => a.AniListId is > 0).Select(a => a.AniListId!.Value).Distinct().ToList();
         var malIds = incoming.Where(a => a.MALId is > 0).Select(a => a.MALId!.Value).Distinct().ToList();
-        // IDs remain the primary identity. Load title candidates as well so a
-        // provider record lacking a shared ID can still merge with its existing
-        // English, romaji, native, or synonym title instead of creating a duplicate.
-        var existingRows = await db.Animes.Include(a => a.TitleAliases).ToListAsync(ct);
+        var sources = incoming.Where(a => a.AniListId is > 0 || a.MALId is > 0).GroupBy(Key).Select(g => g.First()).ToList();
+        // Most syncs update provider IDs already in the catalogue. Start with
+        // only those candidates; fall back to the complete alias scan only when
+        // a source really needs title-based identity matching.
+        var existingRows = await db.Animes.Include(a => a.TitleAliases)
+            .Where(a => (a.AniListId != null && aniListIds.Contains(a.AniListId.Value)) ||
+                        (a.MALId != null && malIds.Contains(a.MALId.Value)))
+            .ToListAsync(ct);
+        var resolvedProviderIds = existingRows.SelectMany(row => new[]
+            { row.AniListId is > 0 ? $"a:{row.AniListId}" : null, row.MALId is > 0 ? $"m:{row.MALId}" : null })
+            .Where(key => key is not null).Select(key => key!).ToHashSet();
+        if (sources.Any(source => !resolvedProviderIds.Contains(Key(source)) &&
+                                  (source.MALId is not > 0 || !resolvedProviderIds.Contains($"m:{source.MALId}"))))
+            existingRows = await db.Animes.Include(a => a.TitleAliases).ToListAsync(ct);
         var existing = new Dictionary<string, Anime>();
         var existingByName = new Dictionary<string, HashSet<Anime>>(StringComparer.Ordinal);
         foreach (var row in existingRows)
@@ -293,7 +336,6 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
             if (row.MALId is > 0) existing[$"m:{row.MALId}"] = row;
             AddNameCandidates(existingByName, row);
         }
-        var sources = incoming.Where(a => a.AniListId is > 0 || a.MALId is > 0).GroupBy(Key).Select(g => g.First()).ToList();
         foreach (var source in sources)
         {
             if (!existing.TryGetValue(Key(source), out var target) &&
@@ -541,35 +583,60 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
     }
     private async Task StoreImagesAsync(Anime target, Anime source, CancellationToken ct)
     {
-        var candidates = source.SourceImages.Count > 0
+        var candidates = (source.SourceImages.Count > 0
             ? source.SourceImages
-            : string.IsNullOrWhiteSpace(source.ImageUrl) ? [] : [new SourceImage { Source = "Unknown", Type = "Poster", Url = source.ImageUrl }];
-        foreach (var candidate in candidates.Where(image => !string.IsNullOrWhiteSpace(image.Url)).GroupBy(image => (image.Source, image.Type, image.Url)).Select(group => group.First()))
+            : string.IsNullOrWhiteSpace(source.ImageUrl) ? [] : [new SourceImage { Source = "Unknown", Type = "Poster", Url = source.ImageUrl }])
+            .Where(image => !string.IsNullOrWhiteSpace(image.Url))
+            .GroupBy(image => (image.Source, image.Type, image.Url)).Select(group => group.First()).ToList();
+        if (candidates.Count == 0) return;
+
+        var existing = (await db.AnimeImages.Where(image => image.AnimeId == target.Id).ToListAsync(ct))
+            .ToDictionary(image => (image.Source, image.Type, image.ImageUrl));
+        var images = new List<AnimeImage>(candidates.Count);
+        foreach (var candidate in candidates)
         {
-            var image = await db.AnimeImages.FirstOrDefaultAsync(existing =>
-                existing.AnimeId == target.Id && existing.Source == candidate.Source && existing.Type == candidate.Type && existing.ImageUrl == candidate.Url, ct);
-            if (image is null)
+            if (!existing.TryGetValue((candidate.Source, candidate.Type, candidate.Url), out var image))
             {
                 image = new AnimeImage { AnimeId = target.Id, Source = candidate.Source, Type = candidate.Type, ImageUrl = candidate.Url };
                 db.AnimeImages.Add(image);
-                await db.SaveChangesAsync(ct);
             }
+            images.Add(image);
+        }
+        await db.SaveChangesAsync(ct);
+        foreach (var image in images)
+        {
+            var candidate = candidates.First(item => item.Source == image.Source && item.Type == image.Type && item.Url == image.ImageUrl);
             image.LocalImagePath ??= await imageCache.CacheArtworkAsync(candidate.Url, target.Id, candidate.Source, candidate.Type);
         }
     }
     private async Task ReplaceTagsAsync(Anime target, Anime source, CancellationToken ct)
     {
-        db.AnimeGenres.RemoveRange(await db.AnimeGenres.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
-        db.AnimeThemes.RemoveRange(await db.AnimeThemes.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
-        db.AnimeDemographics.RemoveRange(await db.AnimeDemographics.Where(x => x.AnimeId == target.Id).ToListAsync(ct));
-        // A source can return the same anime in adjacent seasons. Persist the old
-        // composite-key links before attaching replacements, otherwise EF tracks
-        // a Deleted and Added link with the same (AnimeId, TagId) key at once.
+        await db.AnimeGenres.Where(x => x.AnimeId == target.Id).ExecuteDeleteAsync(ct);
+        await db.AnimeThemes.Where(x => x.AnimeId == target.Id).ExecuteDeleteAsync(ct);
+        await db.AnimeDemographics.Where(x => x.AnimeId == target.Id).ExecuteDeleteAsync(ct);
+
+        var genreNames = TagNames(source.AnimeGenres.Select(x => x.Genre.Name));
+        var themeNames = TagNames(source.AnimeThemes.Select(x => x.Theme.Name));
+        var demographicNames = TagNames(source.AnimeDemographics.Select(x => x.Demographic.Name));
+        var genres = await TagsByNameAsync(db.Genres, genreNames, ct);
+        var themes = await TagsByNameAsync(db.Themes, themeNames, ct);
+        var demographics = await TagsByNameAsync(db.Demographics, demographicNames, ct);
+
+        foreach (var name in genreNames) { if (!genres.TryGetValue(name, out var tag)) { tag = new Genre { Name = name }; db.Genres.Add(tag); genres[name] = tag; } db.AnimeGenres.Add(new() { AnimeId = target.Id, Genre = tag }); }
+        foreach (var name in themeNames) { if (!themes.TryGetValue(name, out var tag)) { tag = new Theme { Name = name }; db.Themes.Add(tag); themes[name] = tag; } db.AnimeThemes.Add(new() { AnimeId = target.Id, Theme = tag }); }
+        foreach (var name in demographicNames) { if (!demographics.TryGetValue(name, out var tag)) { tag = new Demographic { Name = name }; db.Demographics.Add(tag); demographics[name] = tag; } db.AnimeDemographics.Add(new() { AnimeId = target.Id, Demographic = tag }); }
         await db.SaveChangesAsync(ct);
-        foreach (var name in source.AnimeGenres.Select(x => NormalizeTagName(x.Genre.Name)).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)) { var tag = await db.Genres.FirstOrDefaultAsync(x => x.Name.ToLower() == name.ToLower(), ct) ?? new Genre { Name=name }; if (tag.Id == 0) db.Genres.Add(tag); db.AnimeGenres.Add(new() { AnimeId=target.Id, Genre=tag }); }
-        foreach (var name in source.AnimeThemes.Select(x => NormalizeTagName(x.Theme.Name)).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)) { var tag = await db.Themes.FirstOrDefaultAsync(x => x.Name.ToLower() == name.ToLower(), ct) ?? new Theme { Name=name }; if (tag.Id == 0) db.Themes.Add(tag); db.AnimeThemes.Add(new() { AnimeId=target.Id, Theme=tag }); }
-        foreach (var name in source.AnimeDemographics.Select(x => NormalizeTagName(x.Demographic.Name)).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)) { var tag = await db.Demographics.FirstOrDefaultAsync(x => x.Name.ToLower() == name.ToLower(), ct) ?? new Demographic { Name=name }; if (tag.Id == 0) db.Demographics.Add(tag); db.AnimeDemographics.Add(new() { AnimeId=target.Id, Demographic=tag }); }
-        await db.SaveChangesAsync(ct);
+        InvalidateLookupCaches();
+    }
+
+    private static List<string> TagNames(IEnumerable<string?> names) => names.Select(NormalizeTagName)
+        .Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static async Task<Dictionary<string, TTag>> TagsByNameAsync<TTag>(DbSet<TTag> tags, List<string> names, CancellationToken ct) where TTag : class
+    {
+        var nameProperty = typeof(TTag).GetProperty("Name")!;
+        var matches = await tags.Where(tag => names.Contains(EF.Property<string>(tag, "Name"))).ToListAsync(ct);
+        return matches.ToDictionary(tag => (string)nameProperty.GetValue(tag)!, StringComparer.OrdinalIgnoreCase);
     }
     private static string NormalizeTagName(string? name) => name?.Trim() ?? string.Empty;
     private async Task<Season> GetOrCreateSeasonAsync(string name, int year, CancellationToken ct) { var season=await db.Seasons.FirstOrDefaultAsync(x=>x.Name==name&&x.Year==year,ct); if(season != null) return season; season=new Season{Name=name,Year=year}; db.Seasons.Add(season); await db.SaveChangesAsync(ct); return season; }

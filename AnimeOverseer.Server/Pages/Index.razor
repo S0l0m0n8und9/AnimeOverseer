@@ -61,11 +61,11 @@
         }
         else if (filterState.IsActive || hideInLibrary || HasNsfwFilter)
         {
-            <span>@DisplayedAnimes.Count of @allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") shown (@totalCount total)</span>
+            <span>@DisplayedAnimes.Count of @allAnimes.Count loaded anime@(allAnimes.Count != 1 ? "s" : "") shown</span>
         }
         else
         {
-            <span>@allAnimes.Count of @totalCount anime@(totalCount != 1 ? "s" : "")</span>
+            <span>@allAnimes.Count anime@(allAnimes.Count != 1 ? "s" : "") loaded</span>
         }
     </div>
 
@@ -115,11 +115,11 @@
                 <div class="spinner"></div>
             </div>
         }
-        else if (!isLoading && allAnimes.Count < totalCount)
+        else if (!isLoading && hasMore)
         {
             <div style="display:flex;justify-content:center;padding:1.5rem 0">
                 <button class="btn btn-primary" @onclick="LoadMore">
-                    Load More (@(totalCount - allAnimes.Count) remaining)
+                    Load More
                 </button>
             </div>
         }
@@ -132,6 +132,7 @@
     private SortState sortState = new();
     private int pageSize = 100;
     private int totalCount = 0;
+    private bool hasMore;
     private string searchQuery = string.Empty;
     private bool isLoading = false;
     private bool isLoadingMore = false;
@@ -212,6 +213,7 @@
 
         allAnimes  = new();
         totalCount = 0;
+        hasMore = false;
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
@@ -270,8 +272,10 @@
         try
         {
             var skip  = append ? allAnimes.Count : 0;
-            var items = await AnimeDataSource.GetRecentAsync(skip, pageSize);
-            if (!append) totalCount = await AnimeDataSource.GetTotalCountAsync();
+            var items = await AnimeDataSource.GetRecentAsync(skip, pageSize + 1);
+            hasMore = items.Count > pageSize;
+            if (hasMore) items.RemoveAt(pageSize);
+            totalCount = allAnimes.Count + items.Count;
             if (append) allAnimes.AddRange(items);
             else        allAnimes = items;
         }
@@ -303,13 +307,16 @@
                 var libraryFilterCandidates = await AnimeDataSource.GetFilteredAsync(new FilterState(), 0, int.MaxValue);
                 allAnimes = FilterEngine.Apply(libraryFilterCandidates, CollectionFilterExpressionResolver.Resolve(filterState), IsInLibrary);
                 totalCount = allAnimes.Count;
+                hasMore = false;
                 return;
             }
 
             var skip  = append ? allAnimes.Count : 0;
             var resolvedFilters = CollectionFilterExpressionResolver.Resolve(filterState);
-            var items = await AnimeDataSource.GetFilteredAsync(resolvedFilters, skip, pageSize);
-            if (!append) totalCount = await AnimeDataSource.GetFilteredCountAsync(resolvedFilters);
+            var items = await AnimeDataSource.GetFilteredAsync(resolvedFilters, skip, pageSize + 1);
+            hasMore = items.Count > pageSize;
+            if (hasMore) items.RemoveAt(pageSize);
+            totalCount = allAnimes.Count + items.Count;
             if (append) allAnimes.AddRange(items);
             else        allAnimes = items;
         }
@@ -330,13 +337,11 @@
     {
         try
         {
-            var genres  = AnimeDataSource.GetGenreNamesAsync();
-            var themes  = AnimeDataSource.GetThemeNamesAsync();
-            var demogs  = AnimeDataSource.GetDemographicNamesAsync();
-            await Task.WhenAll(genres, themes, demogs);
-            AvailableGenres       = genres.Result;
-            AvailableThemes       = themes.Result;
-            AvailableDemographics = demogs.Result;
+            // These methods share the circuit-scoped DbContext, so await each
+            // before starting the next instead of issuing concurrent commands.
+            AvailableGenres       = await AnimeDataSource.GetGenreNamesAsync();
+            AvailableThemes       = await AnimeDataSource.GetThemeNamesAsync();
+            AvailableDemographics = await AnimeDataSource.GetDemographicNamesAsync();
             StateHasChanged();
         }
         catch (Exception ex)
@@ -370,8 +375,10 @@
         try
         {
             var skip  = append ? allAnimes.Count : 0;
-            var items = await AnimeDataSource.GetMostFavoritedAsync(skip, pageSize);
-            if (!append) totalCount = await AnimeDataSource.GetTotalCountAsync(); // Note: This might not be accurate for most favorited
+            var items = await AnimeDataSource.GetMostFavoritedAsync(skip, pageSize + 1);
+            hasMore = items.Count > pageSize;
+            if (hasMore) items.RemoveAt(pageSize);
+            totalCount = allAnimes.Count + items.Count;
             if (append) allAnimes.AddRange(items);
             else        allAnimes = items;
         }

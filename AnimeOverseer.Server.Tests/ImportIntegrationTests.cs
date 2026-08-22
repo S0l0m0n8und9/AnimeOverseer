@@ -9,6 +9,27 @@ namespace AnimeOverseer.Server.Tests;
 public sealed class ImportIntegrationTests : SqliteIntegrationTestBase
 {
     [Fact]
+    public async Task Catalogue_card_query_loads_only_the_preferred_artwork()
+    {
+        await using var db = CreateDb();
+        var season = await AddSeasonAsync(db);
+        var anime = new Anime { Title = "Orbit", SeasonId = season.Id, StartDate = DateTime.UtcNow };
+        db.Animes.Add(anime);
+        await db.SaveChangesAsync();
+        var preferred = new AnimeImage { AnimeId = anime.Id, Source = "AniList", Type = "Poster", ImageUrl = "https://images.test/preferred.jpg" };
+        db.AnimeImages.AddRange(preferred, new AnimeImage { AnimeId = anime.Id, Source = "AniList", Type = "Banner", ImageUrl = "https://images.test/banner.jpg" });
+        await db.SaveChangesAsync();
+        anime.PreferredImageId = preferred.Id;
+        await db.SaveChangesAsync();
+
+        var cards = await CreateCache(db).GetRecentAsync(0, 10);
+
+        var card = Assert.Single(cards);
+        Assert.Single(card.Images);
+        Assert.Equal(preferred.Id, card.Images[0].Id);
+    }
+
+    [Fact]
     public async Task Import_reuses_provider_identity_and_deduplicates_aliases_and_images()
     {
         await using var db = CreateDb();

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace AnimeOverseer.Server.Tests;
@@ -207,13 +208,14 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         await db.SaveChangesAsync();
 
         using var services = new ServiceCollection().BuildServiceProvider();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
         var handler = new SequenceHandler();
         var sync = new SyncService(
             db,
             services.GetRequiredService<IServiceScopeFactory>(),
             new AniListApiService(new HttpClient(), NullLogger<AniListApiService>.Instance),
-            new MyAnimeListApiService(new HttpClient(), new ConfigurationBuilder().Build(), new SettingsService(db)),
-            new AnimeScheduleApiService(new HttpClient(), new SettingsService(db)),
+            new MyAnimeListApiService(new HttpClient(), new ConfigurationBuilder().Build(), new SettingsService(db, cache)),
+            new AnimeScheduleApiService(new HttpClient(), new SettingsService(db, cache)),
             new KitsuApiService(new HttpClient(handler)),
             NullLogger<SyncService>.Instance);
 
@@ -257,6 +259,7 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
         services.AddScoped(_ => new AnimeOverseer.Server.Data.AnimeDbContext(
             new DbContextOptionsBuilder<AnimeOverseer.Server.Data.AnimeDbContext>().UseSqlite(ConnectionString).Options));
         services.AddSingleton<SyncJobTrigger>();
+        services.AddMemoryCache();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddScoped<HttpClient>();

@@ -149,7 +149,11 @@ public class MediaLibraryService(IServiceScopeFactory scopeFactory, IHttpClientF
             if ((DateTime.UtcNow - _lastRefreshed).TotalMinutes < 10) return;
             await using var scope = scopeFactory.CreateAsyncScope();
             var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
-            await Task.WhenAll(RefreshSonarrAsync(settings), RefreshRadarrAsync(settings));
+            // SettingsService shares this scope's DbContext. Keeping these
+            // lookups sequential avoids concurrent EF operations; the HTTP data
+            // is already cached for ten minutes after the first lookup.
+            await RefreshSonarrAsync(settings);
+            await RefreshRadarrAsync(settings);
             _lastRefreshed = DateTime.UtcNow;
         }
         finally { _lock.Release(); }

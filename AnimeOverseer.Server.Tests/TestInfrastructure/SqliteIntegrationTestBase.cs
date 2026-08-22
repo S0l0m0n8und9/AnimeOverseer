@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AnimeOverseer.Server.Tests.TestInfrastructure;
 
@@ -36,7 +37,7 @@ public abstract class SqliteIntegrationTestBase : IDisposable
         var aniList = new AniListApiService(client, NullLogger<AniListApiService>.Instance);
         var jikan = new JikanApiService(client, NullLogger<JikanApiService>.Instance);
         var imageCache = new ImageCacheService(new TestHttpClientFactory(client), new TestWebHostEnvironment());
-        return new AnimeCacheService(db, aniList, jikan, imageCache);
+        return new AnimeCacheService(db, aniList, jikan, imageCache, new MemoryCache(new MemoryCacheOptions()));
     }
 
     protected static Anime Incoming(int aniListId, string title, bool english, List<string>? aliases = null, List<SourceImage>? images = null)

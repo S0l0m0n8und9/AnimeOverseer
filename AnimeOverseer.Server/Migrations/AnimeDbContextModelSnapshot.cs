@@ -87,6 +87,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SeasonId");
+                    b.HasIndex("AniListId");
+                    b.HasIndex("MALId");
+                    b.HasIndex("StartDate");
 
                     b.ToTable("Animes");
                 });
@@ -388,6 +391,8 @@ namespace AnimeOverseer.Server.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RootMalId");
+
                     b.ToTable("CachedAnimeRelations");
                 });
 
@@ -478,6 +483,9 @@ namespace AnimeOverseer.Server.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Year", "Name")
+                        .IsUnique();
+
                     b.ToTable("Seasons");
                 });
 
@@ -500,6 +508,7 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<int?>("SyncJobId").HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
                     b.HasIndex("Status", "CreatedAt");
                     b.ToTable("PendingAnimeReviews");
                 });
