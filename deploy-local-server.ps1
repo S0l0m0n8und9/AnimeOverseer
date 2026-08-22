@@ -10,10 +10,16 @@ param(
 
     [string]$ImageRepository = 'animeoverseer',
 
-    [string]$ImageTag
+    [string]$ImageTag,
+
+    [string]$GitTagPrefix = 'deploy-',
+
+    [ValidateSet('true', 'false')]
+    [string]$PushGitTag = 'true'
 )
 
 $ErrorActionPreference = 'Stop'
+$shouldPushGitTag = [System.Convert]::ToBoolean($PushGitTag)
 
 function Invoke-Checked {
     param([scriptblock]$Command, [string]$Description)
@@ -21,6 +27,17 @@ function Invoke-Checked {
     & $Command
     if ($LASTEXITCODE -ne 0) {
         throw "$Description failed with exit code $LASTEXITCODE."
+    }
+}
+
+function New-DeploymentGitTag {
+    param([string]$TagName, [string]$ImageName)
+
+    Invoke-Checked { git -C $repositoryRoot rev-parse --verify HEAD } 'Git repository verification'
+    Invoke-Checked { git -C $repositoryRoot tag --annotate $TagName --message "Deployed $ImageName" } "Git tag creation ($TagName)"
+
+    if ($shouldPushGitTag) {
+        Invoke-Checked { git -C $repositoryRoot push origin "refs/tags/$TagName" } "Git tag push ($TagName)"
     }
 }
 
@@ -46,6 +63,7 @@ $imageTag = if ($ImageTag) {
 }
 
 $image = "${ImageRepository}:${imageTag}"
+$gitTag = "${GitTagPrefix}${imageTag}"
 $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) "${ImageRepository}-${imageTag}.tar"
 $destination = "${ServerUser}@${ServerHost}"
 $remoteArchivePath = Join-Path $RemoteDeployPath 'animeoverseer.tar'
@@ -70,7 +88,11 @@ try {
     Write-Host 'Loading the image and restarting the service...'
     Invoke-Checked { ssh $destination powershell -NoProfile -Command $remoteCommand } 'Remote deployment'
 
+    Write-Host "Creating Git tag $gitTag..."
+    New-DeploymentGitTag -TagName $gitTag -ImageName $image
+
     Write-Host "Deployment complete: $image"
+    Write-Host "Git tag created: $gitTag"
 }
 finally {
     if (Test-Path -LiteralPath $archivePath) {
