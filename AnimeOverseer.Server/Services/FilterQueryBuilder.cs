@@ -9,7 +9,7 @@ public static class FilterQueryBuilder
     public static IQueryable<Anime> Apply(IQueryable<Anime> query, FilterState state)
     {
         var activeGroups = state.Groups
-            .Where(g => g.Conditions.Any(FilterState.IsActiveCondition))
+            .Where(FilterState.IsActiveGroup)
             .ToList();
 
         if (activeGroups.Count == 0) return query;
@@ -37,6 +37,7 @@ public static class FilterQueryBuilder
         var exprs = group.Conditions
             .Where(FilterState.IsActiveCondition)
             .Select(c => BuildCondition(c, param))
+            .Concat(group.Subgroups.Where(FilterState.IsActiveGroup).Select(g => BuildGroup(g, param)))
             .OfType<Expression>()
             .ToList();
 

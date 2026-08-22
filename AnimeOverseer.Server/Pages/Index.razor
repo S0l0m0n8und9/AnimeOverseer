@@ -665,16 +665,7 @@
         var dto = new
         {
             l = (int)state.TopLevelLogic,
-            g = state.Groups
-                .Select(g => new
-                {
-                    l = (int)g.Logic,
-                    c = g.Conditions
-                        .Where(FilterState.IsActiveCondition)
-                        .Select(c => new { f = (int)c.Field, o = (int)c.Operator, v = c.Value, vs = c.Values, vl = (int)c.ValueLogic })
-                        .ToArray()
-                })
-                .Where(g => g.c.Length > 0)
+            g = state.Groups.Where(FilterState.IsActiveGroup).Select(SerializeGroup)
                 .ToArray()
         };
         return JsonSerializer.Serialize(dto);
@@ -714,22 +705,32 @@
             var state = new FilterState
             {
                 TopLevelLogic = (GroupLogic)root.GetProperty("l").GetInt32(),
-                Groups = root.GetProperty("g").EnumerateArray().Select(g => new FilterGroup
-                {
-                    Logic = (GroupLogic)g.GetProperty("l").GetInt32(),
-                    Conditions = g.GetProperty("c").EnumerateArray().Select(c => new FilterCondition
-                    {
-                        Field    = (FilterField)c.GetProperty("f").GetInt32(),
-                        Operator = (FilterOperator)c.GetProperty("o").GetInt32(),
-                        Value    = c.GetProperty("v").GetString() ?? string.Empty,
-                        Values   = c.TryGetProperty("vs", out var values) ? values.EnumerateArray().Select(value => value.GetString() ?? string.Empty).ToList() : [],
-                        ValueLogic = c.TryGetProperty("vl", out var valueLogic) ? (ValueLogic)valueLogic.GetInt32() : ValueLogic.Any
-                    }).ToList()
-                }).ToList()
+                Groups = root.GetProperty("g").EnumerateArray().Select(DeserializeGroup).ToList()
             };
             if (state.Groups.Count == 0) state.Groups.Add(new FilterGroup());
             return state;
         }
         catch { return null; }
     }
+
+    private static object SerializeGroup(FilterGroup group) => new
+    {
+        l = (int)group.Logic,
+        c = group.Conditions.Where(FilterState.IsActiveCondition)
+            .Select(c => new { f = (int)c.Field, o = (int)c.Operator, v = c.Value, vs = c.Values, vl = (int)c.ValueLogic }).ToArray(),
+        g = group.Subgroups.Where(FilterState.IsActiveGroup).Select(SerializeGroup).ToArray()
+    };
+
+    private static FilterGroup DeserializeGroup(JsonElement group) => new()
+    {
+        Logic = (GroupLogic)group.GetProperty("l").GetInt32(),
+        Conditions = group.GetProperty("c").EnumerateArray().Select(c => new FilterCondition
+        {
+            Field = (FilterField)c.GetProperty("f").GetInt32(), Operator = (FilterOperator)c.GetProperty("o").GetInt32(),
+            Value = c.GetProperty("v").GetString() ?? string.Empty,
+            Values = c.TryGetProperty("vs", out var values) ? values.EnumerateArray().Select(value => value.GetString() ?? string.Empty).ToList() : [],
+            ValueLogic = c.TryGetProperty("vl", out var valueLogic) ? (ValueLogic)valueLogic.GetInt32() : ValueLogic.Any
+        }).ToList(),
+        Subgroups = group.TryGetProperty("g", out var subgroups) ? subgroups.EnumerateArray().Select(DeserializeGroup).ToList() : []
+    };
 }

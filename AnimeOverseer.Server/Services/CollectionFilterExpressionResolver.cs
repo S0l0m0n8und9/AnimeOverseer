@@ -20,26 +20,30 @@ public static partial class CollectionFilterExpressionResolver
         return new FilterState
         {
             TopLevelLogic = source.TopLevelLogic,
-            Groups = source.Groups.Select(group => new FilterGroup
-            {
-                Id = group.Id,
-                Logic = group.Logic,
-                Conditions = group.Conditions.Select(condition => new FilterCondition
-                {
-                    Id = condition.Id,
-                    Field = condition.Field,
-                    Operator = condition.Operator,
-                    Value = ResolveValue(condition.Field, condition.Value, date, anime),
-                    Values = condition.Values.Select(value => ResolveValue(condition.Field, value, date, anime)).ToList(),
-                    ValueLogic = condition.ValueLogic
-                }).ToList()
-            }).ToList()
+            Groups = source.Groups.Select(group => ResolveGroup(group, date, anime)).ToList()
         };
     }
 
+    private static FilterGroup ResolveGroup(FilterGroup group, DateTime date, Anime? anime) => new()
+    {
+        Id = group.Id,
+        Logic = group.Logic,
+        Conditions = group.Conditions.Select(condition => new FilterCondition
+        {
+            Id = condition.Id, Field = condition.Field, Operator = condition.Operator,
+            Value = ResolveValue(condition.Field, condition.Value, date, anime),
+            Values = condition.Values.Select(value => ResolveValue(condition.Field, value, date, anime)).ToList(),
+            ValueLogic = condition.ValueLogic
+        }).ToList(),
+        Subgroups = group.Subgroups.Select(subgroup => ResolveGroup(subgroup, date, anime)).ToList()
+    };
+
     public static bool RequiresAnimeContext(FilterState state) => state.Groups
-        .SelectMany(group => group.Conditions)
+        .SelectMany(AllConditions)
         .Any(condition => IsStringField(condition.Field) && condition.EffectiveValues.Any(value => value.Contains("{{", StringComparison.Ordinal)));
+
+    private static IEnumerable<FilterCondition> AllConditions(FilterGroup group) =>
+        group.Conditions.Concat(group.Subgroups.SelectMany(AllConditions));
 
     private static string ResolveValue(FilterField field, string value, DateTime today, Anime? anime)
     {

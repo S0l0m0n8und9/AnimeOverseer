@@ -5,8 +5,14 @@ public class FilterState
     public GroupLogic TopLevelLogic { get; set; } = GroupLogic.And;
     public List<FilterGroup> Groups { get; set; } = [new FilterGroup()];
 
-    public bool IsActive => Groups.Any(g => g.Conditions.Any(IsActiveCondition));
-    public int ActiveCount => Groups.Sum(g => g.Conditions.Count(IsActiveCondition));
+    public bool IsActive => Groups.Any(IsActiveGroup);
+    public int ActiveCount => Groups.Sum(ActiveConditionCount);
+
+    public static bool IsActiveGroup(FilterGroup group) =>
+        group.Conditions.Any(IsActiveCondition) || group.Subgroups.Any(IsActiveGroup);
+
+    public static int ActiveConditionCount(FilterGroup group) =>
+        group.Conditions.Count(IsActiveCondition) + group.Subgroups.Sum(ActiveConditionCount);
 
     public static bool IsActiveCondition(FilterCondition condition) =>
         condition.Operator is FilterOperator.ContainsData or FilterOperator.DoesNotContainData ||
@@ -18,6 +24,7 @@ public class FilterGroup
     public Guid Id { get; set; } = Guid.NewGuid();
     public GroupLogic Logic { get; set; } = GroupLogic.And;
     public List<FilterCondition> Conditions { get; set; } = [new FilterCondition()];
+    public List<FilterGroup> Subgroups { get; set; } = [];
 }
 
 public class FilterCondition

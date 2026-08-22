@@ -7,7 +7,7 @@ public static class FilterEngine
     public static List<Anime> Apply(List<Anime> animes, FilterState state, Func<Anime, bool>? isInLibrary = null)
     {
         var activeGroups = state.Groups
-            .Where(g => g.Conditions.Any(FilterState.IsActiveCondition))
+            .Where(FilterState.IsActiveGroup)
             .ToList();
 
         if (activeGroups.Count == 0) return animes;
@@ -19,12 +19,16 @@ public static class FilterEngine
 
     private static bool MatchGroup(Anime anime, FilterGroup group, Func<Anime, bool>? isInLibrary)
     {
-        var conditions = group.Conditions.Where(FilterState.IsActiveCondition).ToList();
-        if (conditions.Count == 0) return true;
+        var conditions = group.Conditions.Where(FilterState.IsActiveCondition)
+            .Select(c => MatchCondition(anime, c, isInLibrary));
+        var subgroups = group.Subgroups.Where(FilterState.IsActiveGroup)
+            .Select(g => MatchGroup(anime, g, isInLibrary));
+        var matches = conditions.Concat(subgroups).ToList();
+        if (matches.Count == 0) return true;
 
         return group.Logic == GroupLogic.And
-            ? conditions.All(c => MatchCondition(anime, c, isInLibrary))
-            : conditions.Any(c => MatchCondition(anime, c, isInLibrary));
+            ? matches.All(match => match)
+            : matches.Any(match => match);
     }
 
     private static bool MatchCondition(Anime anime, FilterCondition c, Func<Anime, bool>? isInLibrary)
