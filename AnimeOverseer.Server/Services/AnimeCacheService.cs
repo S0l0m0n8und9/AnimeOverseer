@@ -201,7 +201,12 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         var aniListIds = candidates.Where(anime => anime.AniListId is > 0).Select(anime => anime.AniListId!.Value).ToArray();
         var saved = await db.Animes.Where(anime => anime.AniListId != null && aniListIds.Contains(anime.AniListId.Value))
             .Select(anime => new { anime.Id, AniListId = anime.AniListId!.Value }).ToListAsync(ct);
-        var localIds = saved.ToDictionary(anime => anime.AniListId, anime => anime.Id);
+        // Older databases can contain multiple rows with the same external ID.
+        // That should not abort the entire sync; use a stable local target until
+        // the duplicate can be reviewed and merged separately.
+        var localIds = saved
+            .GroupBy(anime => anime.AniListId)
+            .ToDictionary(group => group.Key, group => group.Min(anime => anime.Id));
 
         var old = await db.AnimeRecommendations.Where(item => item.SourceAnimeId == root.Id).ToListAsync(ct);
         db.AnimeRecommendations.RemoveRange(old);

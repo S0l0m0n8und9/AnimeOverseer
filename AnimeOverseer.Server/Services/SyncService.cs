@@ -234,9 +234,17 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 
         public void Record(Anime anime, Exception exception)
         {
-            Count++;
             var item = anime.MALId is > 0 ? $"MAL {anime.MALId}" : $"local {anime.Id}";
             if (!string.IsNullOrWhiteSpace(anime.Title)) item += $" ({anime.Title})";
+            Record(item, exception);
+        }
+
+        public void Record(int localAnimeId, Exception exception)
+            => Record($"local {localAnimeId}", exception);
+
+        private void Record(string item, Exception exception)
+        {
+            Count++;
             var message = $"{source} item {item} failed ({exception.GetType().Name})";
             logger.LogError("{Source} sync item failed. JobId: {JobId}; Item: {Item}; ErrorType: {ErrorType}; Details: {Details}",
                 source, job.Id, item, exception.GetType().Name, Redact(exception.ToString()));
@@ -276,22 +284,38 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         Log(job, $"AniList recommendation sync started — {job.TotalCount:N0} anime in {seasons.Length} season(s) × {years.Length} year(s)");
         await db.SaveChangesAsync(ct);
 
+        var failures = new ImportFailures("AniList recommendation", logger, db, job);
         foreach (var animeId in animeIds)
         {
             ct.ThrowIfCancellationRequested();
-            using var cacheScope = scopeFactory.CreateScope();
-            var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
-            await cache.FetchAndStoreRecommendationsAsync(animeId, ct);
-            syncedIds.Add(animeId);
+            try
+            {
+                // A fresh scope ensures a failed record cannot leave tracked changes
+                // behind for the next one.
+                using var cacheScope = scopeFactory.CreateScope();
+                var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+                await cache.FetchAndStoreRecommendationsAsync(animeId, ct);
+                syncedIds.Add(animeId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Record(animeId, ex);
+            }
+
             job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
             job.ProcessedCount++;
             if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
-                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}");
-            // Save every successful source ID so history remains accurate after a cancellation or failure.
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
+            // Save every attempted source ID so a record-specific failure does not
+            // prevent the rest of this run from completing.
             await db.SaveChangesAsync(ct);
             // AniListApiService coordinates the global request rate and retries 429s.
         }
-        Log(job, $"Recommendation sync complete — {job.ProcessedCount:N0} anime processed", "Success");
+        Log(job, failures.Summary(job.ProcessedCount), failures.Count > 0 ? "Warning" : "Success");
         await db.SaveChangesAsync(ct);
     }
 
@@ -306,20 +330,35 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
         Log(job, $"Related anime sync started — {job.TotalCount:N0} anime from AniList and Jikan");
         await db.SaveChangesAsync(ct);
 
+        var failures = new ImportFailures("AniList relation", logger, db, job);
         foreach (var animeId in animeIds)
         {
             ct.ThrowIfCancellationRequested();
-            using var cacheScope = scopeFactory.CreateScope();
-            var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
-            await cache.FetchAndStoreRelationsAsync(animeId, ct);
-            syncedIds.Add(animeId);
+            try
+            {
+                // A fresh scope ensures a failed record cannot leave tracked changes
+                // behind for the next one.
+                using var cacheScope = scopeFactory.CreateScope();
+                var cache = cacheScope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+                await cache.FetchAndStoreRelationsAsync(animeId, ct);
+                syncedIds.Add(animeId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Record(animeId, ex);
+            }
+
             job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
             job.ProcessedCount++;
             if (job.ProcessedCount % 20 == 0 || job.ProcessedCount == job.TotalCount)
-                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}");
+                Log(job, $"Progress: {job.ProcessedCount:N0} / {job.TotalCount:N0}{failures.ProgressSuffix}");
             await db.SaveChangesAsync(ct);
         }
-        Log(job, $"Related anime sync complete — {job.ProcessedCount:N0} anime processed", "Success");
+        Log(job, failures.Summary(job.ProcessedCount), failures.Count > 0 ? "Warning" : "Success");
         await db.SaveChangesAsync(ct);
     }
 
