@@ -68,6 +68,8 @@ public static class FilterEngine
             FilterField.StartDate    => MatchDate(anime.StartDate, c.Operator, val),
             FilterField.EndDate      => MatchDate(anime.EndDate, c.Operator, val),
             FilterField.CachedAt     => MatchDate(anime.CachedAt, c.Operator, val),
+            FilterField.CreatedAt    => MatchDate(anime.CreatedAt, c.Operator, val),
+            FilterField.ModifiedAt   => MatchDate(anime.ModifiedAt, c.Operator, val),
             FilterField.InLibrary    => MatchBoolean(isInLibrary?.Invoke(anime) ?? false, c.Operator, val),
             _                        => true
         };
@@ -142,6 +144,9 @@ public static class FilterEngine
             _                                 => true
         };
     }
+
+    private static bool MatchDate(DateTime field, FilterOperator op, string val) =>
+        MatchDate((DateTime?)field, op, val);
 
     private static bool MatchBoolean(bool field, FilterOperator op, string val)
     {

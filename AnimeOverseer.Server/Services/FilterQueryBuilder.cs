@@ -87,6 +87,8 @@ public static class FilterQueryBuilder
             FilterField.StartDate    => NullableDateExpr(Expression.Property(param, "StartDate"), c.Operator, val),
             FilterField.EndDate      => NullableDateExpr(Expression.Property(param, "EndDate"), c.Operator, val),
             FilterField.CachedAt     => NullableDateExpr(Expression.Property(param, "CachedAt"), c.Operator, val),
+            FilterField.CreatedAt    => DateExpr(Expression.Property(param, "CreatedAt"), c.Operator, val),
+            FilterField.ModifiedAt   => DateExpr(Expression.Property(param, "ModifiedAt"), c.Operator, val),
             FilterField.InLibrary    => null,
             FilterField.Genres       => TagExpr(param, "AnimeGenres", "Genre", c.Operator, val),
             FilterField.Themes       => TagExpr(param, "AnimeThemes", "Theme", c.Operator, val),
@@ -165,6 +167,14 @@ public static class FilterQueryBuilder
         return op == FilterOperator.NotEquals
             ? Expression.OrElse(Expression.Not(hasValue), cmp)
             : Expression.AndAlso(hasValue, cmp);
+    }
+
+    private static Expression DateExpr(Expression prop, FilterOperator op, string val)
+    {
+        if (op == FilterOperator.ContainsData) return Expression.Constant(true);
+        if (op == FilterOperator.DoesNotContainData) return Expression.Constant(false);
+        if (!DateTime.TryParse(val, out var target)) return Expression.Constant(true);
+        return NumericCmp(Expression.Property(prop, nameof(DateTime.Date)), op, Expression.Constant(target.Date));
     }
 
     private static Expression NumericCmp(Expression field, FilterOperator op, Expression target) => op switch

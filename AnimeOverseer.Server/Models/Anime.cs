@@ -73,6 +73,12 @@ public class Anime
 
     public DateTime? CachedAt { get; set; }
 
+    // Audit timestamps are maintained by AnimeDbContext whenever this catalogue
+    // record is inserted or changed.
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime ModifiedAt { get; set; }
+
     public string? LocalImagePath { get; set; }
 
     // A user-selected artwork record to use in place of the catalogue's default cover.

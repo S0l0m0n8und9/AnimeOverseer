@@ -29,6 +29,9 @@ namespace AnimeOverseer.Server.Migrations
                     b.Property<DateTime?>("CachedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("Duration")
                         .HasColumnType("INTEGER");
 
@@ -55,6 +58,9 @@ namespace AnimeOverseer.Server.Migrations
 
                     b.Property<int?>("MALId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModifiedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("OriginalTitle")
                         .HasColumnType("TEXT");

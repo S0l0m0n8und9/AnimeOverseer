@@ -17,7 +17,7 @@
     }
     else
     {
-        <input class="form-input condition-value" list="@ListId" placeholder="@Placeholder" value="@Value" @oninput="ChangeValue" />
+        <input class="form-input condition-value" type="@(UseDatePicker ? "date" : "text")" list="@(UseDatePicker ? null : ListId)" placeholder="@Placeholder" value="@Value" @oninput="ChangeValue" />
         @if (Suggestions.Count > 0)
         {
             <datalist id="@ListId">
@@ -69,6 +69,7 @@
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public bool AllowDynamicExpressions { get; set; }
     [Parameter] public bool UseOptionSet { get; set; }
+    [Parameter] public bool UseDatePicker { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Value…";
     [Parameter] public List<string> Suggestions { get; set; } = [];
 
@@ -99,7 +100,7 @@
         ("title", "Title"), ("originalTitle", "Original title"), ("synopsis", "Synopsis"), ("type", "Type"), ("status", "Status"),
         ("season", "Season"), ("year", "Year"), ("episodes", "Episodes"), ("duration", "Duration"), ("rating", "Rating"),
         ("malId", "MAL ID"), ("aniListId", "AniList ID"), ("kitsuId", "Kitsu ID"), ("startDate", "Start date"), ("endDate", "End date"),
-        ("cachedAt", "Cached at"), ("genres", "Genres"), ("themes", "Themes"), ("demographics", "Demographics")
+        ("cachedAt", "Cached at"), ("createdAt", "Created at"), ("modifiedAt", "Modified at"), ("genres", "Genres"), ("themes", "Themes"), ("demographics", "Demographics")
     ];
     private static readonly (string Value, string Label)[] Functions =
     [ ("lower", "lower"), ("upper", "upper"), ("trim", "trim"), ("replace", "replace"), ("concat", "concat"), ("substring", "substring") ];

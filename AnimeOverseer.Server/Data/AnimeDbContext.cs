@@ -31,6 +31,36 @@ public class AnimeDbContext : DbContext
     public DbSet<AnimeCollection> AnimeCollections { get; set; }
     public DbSet<AnimeCollectionItem> AnimeCollectionItems { get; set; }
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ApplyAnimeAuditTimestamps();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        ApplyAnimeAuditTimestamps();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void ApplyAnimeAuditTimestamps()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var entry in ChangeTracker.Entries<Anime>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.ModifiedAt = now;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Property(anime => anime.CreatedAt).IsModified = false;
+                entry.Entity.ModifiedAt = now;
+            }
+        }
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

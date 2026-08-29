@@ -65,6 +65,8 @@ public enum FilterField
     StartDate,
     EndDate,
     CachedAt,
+    CreatedAt,
+    ModifiedAt,
     InLibrary
 }
 

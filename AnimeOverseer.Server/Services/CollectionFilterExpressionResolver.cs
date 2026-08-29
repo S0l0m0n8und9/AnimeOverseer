@@ -84,7 +84,7 @@ public static partial class CollectionFilterExpressionResolver
 
         if (IsStringField(field)) return ResolveStringTemplates(value, anime);
 
-        if (field is FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt)
+        if (field is FilterField.StartDate or FilterField.EndDate or FilterField.CachedAt or FilterField.CreatedAt or FilterField.ModifiedAt)
         {
             if (expression.Equals("today", StringComparison.OrdinalIgnoreCase) || expression.Equals("currentDate", StringComparison.OrdinalIgnoreCase)) return today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var offset = DateOffset().Match(expression);
@@ -212,11 +212,13 @@ public static partial class CollectionFilterExpressionResolver
             "startdate" => anime.StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
             "enddate" => anime.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
             "cachedat" => anime.CachedAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
+            "createdat" => anime.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            "modifiedat" => anime.ModifiedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             "genres" => string.Join(", ", anime.AnimeGenres.Select(link => link.Genre?.Name).Where(name => !string.IsNullOrWhiteSpace(name))),
             "themes" => string.Join(", ", anime.AnimeThemes.Select(link => link.Theme?.Name).Where(name => !string.IsNullOrWhiteSpace(name))),
             "demographics" => string.Join(", ", anime.AnimeDemographics.Select(link => link.Demographic?.Name).Where(name => !string.IsNullOrWhiteSpace(name))),
             _ => string.Empty
         };
-        return name.ToLowerInvariant() is "id" or "title" or "originaltitle" or "synopsis" or "type" or "status" or "season" or "year" or "episodes" or "duration" or "rating" or "malid" or "anilistid" or "kitsuid" or "startdate" or "enddate" or "cachedat" or "genres" or "themes" or "demographics";
+        return name.ToLowerInvariant() is "id" or "title" or "originaltitle" or "synopsis" or "type" or "status" or "season" or "year" or "episodes" or "duration" or "rating" or "malid" or "anilistid" or "kitsuid" or "startdate" or "enddate" or "cachedat" or "createdat" or "modifiedat" or "genres" or "themes" or "demographics";
     }
 }
