@@ -8,6 +8,17 @@ namespace AnimeOverseer.Server.Services;
 
 public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, AniListApiService aniList, MyAnimeListApiService myAnimeList, AnimeScheduleApiService animeSchedule, KitsuApiService kitsu, ILogger<SyncService> logger)
 {
+    public async Task RunTopUpcomingSyncAsync(SyncJob job, CancellationToken ct)
+    {
+        Log(job, "AniList top-upcoming refresh started");
+        using var scope = scopeFactory.CreateScope();
+        var cache = scope.ServiceProvider.GetRequiredService<AnimeCacheService>();
+        await cache.FetchAndCacheCurrentlyAiringAsync(ct: ct);
+        job.ProcessedCount = await cache.GetTopUpcomingCountAsync();
+        job.TotalCount = job.ProcessedCount;
+        Log(job, $"AniList top-upcoming refresh complete — {job.ProcessedCount:N0} ranked anime cached", "Success");
+    }
+
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
     {
         var (years, seasons) = ParseJikanParams(job.Parameters);

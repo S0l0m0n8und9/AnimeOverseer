@@ -39,7 +39,7 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
         return result;
     }
 
-    public async Task<List<Anime>> GetCurrentAsync(bool upcoming, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+    public async Task<List<Anime>> GetCurrentAsync(bool upcoming, Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default, int? maximumItems = null)
     {
         var status = upcoming ? "NOT_YET_RELEASED" : "RELEASING";
         var result = new List<Anime>();
@@ -52,6 +52,8 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
             var animes = pageData.GetProperty("media").EnumerateArray().Select(MapFromAniList).ToList();
             result.AddRange(animes);
             if (onPageFetched != null) await onPageFetched(page, animes.Count);
+            if (maximumItems is int maximum && result.Count >= maximum)
+                return result.Take(maximum).ToList();
             if (!pageData.GetProperty("pageInfo").GetProperty("hasNextPage").GetBoolean()) break;
         }
         return result;

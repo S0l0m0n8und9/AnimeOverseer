@@ -71,6 +71,25 @@ public sealed class SyncJobIntegrationTests : SqliteIntegrationTestBase
     }
 
     [Fact]
+    public async Task Top_upcoming_schedule_queues_a_dedicated_job_without_catalogue_scope()
+    {
+        await using var db = CreateDb();
+        var schedules = new IntegrationScheduleService(db, new SyncJobTrigger());
+        await schedules.SaveAsync(new IntegrationSchedule
+        {
+            Name = "Refresh top upcoming", Source = "AniList", WorkType = "TopUpcoming", Enabled = true,
+            StartAt = DateTime.UtcNow.AddMinutes(-2), RecurrenceType = "Once", SeasonsJson = "[]"
+        });
+
+        await schedules.QueueDueAsync();
+
+        var schedule = await db.IntegrationSchedules.SingleAsync(item => item.Name == "Refresh top upcoming");
+        var job = await db.SyncJobs.SingleAsync(item => item.JobType == "TopUpcoming");
+        Assert.Equal("AniList", schedule.Source);
+        Assert.Null(job.Parameters);
+    }
+
+    [Fact]
     public async Task One_season_at_a_time_option_chains_any_job_type()
     {
         await using var db = CreateDb();

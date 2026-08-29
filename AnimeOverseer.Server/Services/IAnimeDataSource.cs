@@ -22,5 +22,7 @@ namespace AnimeOverseer.Server.Services
         Task<List<AnimeRelation>> GetRelatedAnimeAsync(int animeId);
         Task<List<Anime>> GetMostFavoritedAsync(int skip, int take);
         Task<int> GetMostFavoritedCountAsync();
+        Task<List<Anime>> GetTopUpcomingAsync(int skip, int take);
+        Task<int> GetTopUpcomingCountAsync();
     }
 }

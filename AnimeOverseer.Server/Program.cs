@@ -46,7 +46,6 @@ builder.Services.AddSingleton<SyncJobTrigger>();
 builder.Services.AddScoped<SyncJobService>();
 builder.Services.AddScoped<IntegrationScheduleService>();
 builder.Services.AddScoped<SyncService>();
-builder.Services.AddHostedService<DailyAiringRefreshService>();
 builder.Services.AddHostedService<SyncJobRunnerService>();
 builder.Services.AddHostedService<IntegrationScheduleServiceWorker>();
 

@@ -112,7 +112,7 @@
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
                     <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
                     <label>Source<select class="form-input" style="display:block" @bind="schedule.Source" @bind:after="() => NormalizeScheduleWorkType(schedule)">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
-                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option>@if (schedule.Source == "AniList") { <option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
+                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option>@if (schedule.Source == "AniList") { <option value="TopUpcoming">Refresh top upcoming</option><option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
                     <label style="display:flex;gap:.35rem;align-items:center;height:38px"><input type="checkbox" @bind="schedule.Enabled" /> Enabled</label>
                 </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
@@ -137,6 +137,9 @@
                     @if (schedule.ProcessOneSeasonAtATime) { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Runs one selected season at a time and automatically queues the next one until the configured range is complete.</p> }
                     @if (schedule.WorkType == "Recommendations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves AniList recommendations for stored AniList anime in the selected years and seasons, then saves the recommendation links.</p> }
                     @if (schedule.WorkType == "Relations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves franchise relationships from AniList and Jikan for stored anime in the selected years and seasons, then saves the local related-anime links.</p> }
+                    @if (schedule.WorkType == "TopUpcoming") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Fetches AniList’s popularity-ranked upcoming anime and refreshes the cached list used by the Top Upcoming quick filter.</p> }
+                    @if (schedule.WorkType != "TopUpcoming")
+                    {
                     <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap;margin-top:.45rem">
                         <label>Starting year<input class="form-input" type="number" style="display:block;width:6rem" @bind="schedule.YearOffset" /></label>
                         <span style="color:#aaa;margin-bottom:.55rem">relative to the current year (@(DateTime.UtcNow.Year + schedule.YearOffset))</span>
@@ -147,6 +150,7 @@
                     <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Comma-separate years to join them. Expressions can use <code>{{currentyear}}</code>, <code>{{nextyear}}</code>, or <code>{{previousyear}}</code> with <code>+</code> or <code>-</code>; supplied expressions replace the starting-year range.</p>
                     <div style="margin-top:.45rem"><span style="color:#aaa">Seasons: </span>@foreach (var season in SeasonOptions) { <label style="margin-left:.6rem"><input type="checkbox" checked="@ScheduleHasSeason(schedule, season)" @onchange="e => ToggleScheduleSeason(schedule, season, (bool)e.Value!)" /> @Capitalize(season)</label> } <button type="button" class="btn btn-secondary" style="font-size:.8em;padding:.15rem .4rem;margin-left:.6rem" @onclick="() => UseRemainingSeasons(schedule)">Use remaining current-year seasons</button></div>
                     <label style="display:block;margin-top:.6rem;color:#ddd"><input type="checkbox" @bind="schedule.ProcessOneSeasonAtATime" /> Process one season at a time (initial migration)</label>
+                    }
                 </div>
                 @if (schedule.RecurrenceType != "Once")
                 {
@@ -868,28 +872,29 @@
     private static void StartScheduleImmediately(IntegrationSchedule schedule) => schedule.StartAt = DateTime.UtcNow;
     private static void NormalizeScheduleSource(IntegrationSchedule schedule)
     {
-        if (schedule.WorkType is "Recommendations" or "Relations") schedule.Source = "AniList";
+        if (schedule.WorkType is "Recommendations" or "Relations" or "TopUpcoming") schedule.Source = "AniList";
     }
     private static void NormalizeScheduleWorkType(IntegrationSchedule schedule)
     {
-        if (schedule.Source != "AniList" && schedule.WorkType is ("Recommendations" or "Relations")) schedule.WorkType = "CatalogueSync";
+        if (schedule.Source != "AniList" && schedule.WorkType is ("Recommendations" or "Relations" or "TopUpcoming")) schedule.WorkType = "CatalogueSync";
     }
     private static string WorkTypeLabel(string workType) => workType switch
     {
         "Recommendations" => "Recommendations",
         "Relations" => "Related anime",
+        "TopUpcoming" => "Top upcoming refresh",
         _ => "Catalogue sync"
     };
 
     private async Task SaveScheduleAsync()
     {
         if (_editingSchedule is null) return;
-        if (_editingSchedule.WorkType is not ("Recommendations" or "Relations") && IntegrationScheduleService.SeasonsFor(_editingSchedule).Length == 0)
+        if (_editingSchedule.WorkType is not ("Recommendations" or "Relations" or "TopUpcoming") && IntegrationScheduleService.SeasonsFor(_editingSchedule).Length == 0)
         {
             _integrationMessage = "Choose at least one season for the scheduled job.";
             return;
         }
-        if (!IntegrationScheduleService.TryYearsFor(_editingSchedule, DateTime.UtcNow, out _, out var yearExpressionError))
+        if (_editingSchedule.WorkType != "TopUpcoming" && !IntegrationScheduleService.TryYearsFor(_editingSchedule, DateTime.UtcNow, out _, out var yearExpressionError))
         {
             _integrationMessage = yearExpressionError;
             return;
@@ -980,6 +985,8 @@
             ? $"{(s.RecurrenceType == "Once" ? "One-off recommendation refresh" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)} · recommendations")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}"
             : s.WorkType == "Relations"
             ? $"{(s.RecurrenceType == "Once" ? "One-off related-anime refresh" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)} · related anime")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}"
+            : s.WorkType == "TopUpcoming"
+            ? (s.RecurrenceType == "Once" ? "One-off top-upcoming refresh" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)} · top upcoming")
             : $"{(s.RecurrenceType == "Once" ? "One-off" : $"Every {s.Interval} {RecurrenceUnit(s.RecurrenceType, s.Interval)}")} · {YearScopeText(s)} · {string.Join(", ", IntegrationScheduleService.SeasonsFor(s).Select(Capitalize))}";
 
     private async Task RunQueuedJobsNowAsync()

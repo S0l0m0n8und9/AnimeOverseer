@@ -139,6 +139,7 @@
     private bool _ownNavigation = false;
     private bool hideInLibrary;
     private bool showNsfw;
+    private bool topUpcoming;
     private List<string> nsfwGenres = [];
     private List<string> nsfwThemes = [];
 
@@ -204,6 +205,7 @@
         searchQuery = qs.GetValueOrDefault("q", string.Empty);
         hideInLibrary = qs.TryGetValue("hideInLibrary", out var hide) && hide == "1";
         showNsfw = qs.TryGetValue("showNsfw", out var show) && show == "1";
+        topUpcoming = qs.TryGetValue("preset", out var preset) && preset == "top-upcoming";
         filterState = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
@@ -217,6 +219,8 @@
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
+        else if (topUpcoming)
+            await LoadTopUpcoming();
         else if (filterState.IsActive)
             await LoadFiltered();
         else
@@ -240,6 +244,8 @@
             parts.Add("hideInLibrary=1");
         if (showNsfw)
             parts.Add("showNsfw=1");
+        if (topUpcoming)
+            parts.Add("preset=top-upcoming");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
         if (sortState.IsActive)
@@ -395,11 +401,41 @@
         }
     }
 
+    private async Task LoadTopUpcoming(bool append = false)
+    {
+        if (append) isLoadingMore = true;
+        else isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var skip = append ? allAnimes.Count : 0;
+            var items = await AnimeDataSource.GetTopUpcomingAsync(skip, pageSize + 1);
+            hasMore = items.Count > pageSize;
+            if (hasMore) items.RemoveAt(pageSize);
+            totalCount = await AnimeDataSource.GetTopUpcomingCountAsync();
+            if (append) allAnimes.AddRange(items);
+            else allAnimes = items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading top upcoming anime: {ex.Message}");
+            if (!append) allAnimes = new();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingMore = false;
+            StateHasChanged();
+        }
+    }
+
     // ── User actions ─────────────────────────────────────────
 
     private async Task LoadMore()
     {
-        if (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery))
+        if (topUpcoming && string.IsNullOrWhiteSpace(searchQuery))
+            await LoadTopUpcoming(append: true);
+        else if (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery))
             await LoadFiltered(append: true);
         else
             await LoadRecent(append: true);
@@ -412,7 +448,9 @@
         allAnimes  = new();
         totalCount = 0;
         PushUrl(replace: true);
-        if (filterState.IsActive)
+        if (topUpcoming)
+            await LoadTopUpcoming();
+        else if (filterState.IsActive)
             await LoadFiltered();
         else
             await LoadRecent();
@@ -420,6 +458,7 @@
 
     private async Task OnFilterChanged()
     {
+        topUpcoming = false;
         allAnimes  = new();
         totalCount = 0;
         PushUrl(replace: true);
@@ -462,6 +501,7 @@
     // ── Preset Filter Handlers ──────────────────────────────────────
     private async Task SetPresetAllAnime()
     {
+        topUpcoming = false;
         filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
@@ -473,6 +513,7 @@
 
     private async Task SetPresetTopAiring()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -495,30 +536,19 @@
 
     private async Task SetPresetTopUpcoming()
     {
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Status,
-                    Operator = FilterOperator.Equals,
-                    // Jikan's canonical status value is "Not yet aired". The
-                    // database filter uses an exact comparison, including case.
-                    Value = "Not yet aired"
-                }]
-            }]
-        };
+        topUpcoming = true;
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadTopUpcoming();
     }
 
     private async Task SetPresetTopTVSeries()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -541,6 +571,7 @@
 
     private async Task SetPresetTopMovies()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -563,6 +594,7 @@
 
     private async Task SetPresetTopOVAs()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -585,6 +617,7 @@
 
     private async Task SetPresetTopONAs()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -607,6 +640,7 @@
 
     private async Task SetPresetTopSpecials()
     {
+        topUpcoming = false;
         filterState = new FilterState
         {
             Groups = [new FilterGroup
@@ -629,6 +663,7 @@
 
     private async Task SetPresetMostPopular()
     {
+        topUpcoming = false;
         filterState = new FilterState();
         sortState = new SortState
         {
@@ -647,6 +682,7 @@
 
     private async Task SetPresetMostFavorited()
     {
+        topUpcoming = false;
         // For Most Favorited, we'll load anime sorted by request count
         // This requires a special query since we don't have built-in sorting by Requests count
         filterState = new FilterState();

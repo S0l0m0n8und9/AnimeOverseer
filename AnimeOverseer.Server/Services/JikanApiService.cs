@@ -315,6 +315,12 @@ public class JikanApiService : IAnimeDataSource
     public Task<int> GetMostFavoritedCountAsync()
         => Task.FromResult(0);
 
+    public Task<List<Anime>> GetTopUpcomingAsync(int skip, int take)
+        => Task.FromResult(new List<Anime>());
+
+    public Task<int> GetTopUpcomingCountAsync()
+        => Task.FromResult(0);
+
     public Task<bool> SetPreferredImageAsync(int animeId, int imageId)
         => Task.FromResult(false);
 }

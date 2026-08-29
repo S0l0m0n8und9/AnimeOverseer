@@ -43,9 +43,9 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
 
         schedule.Name = string.IsNullOrWhiteSpace(input.Name) ? $"{input.Source} schedule" : input.Name.Trim();
         schedule.Source = input.Source;
-        schedule.WorkType = input.WorkType is "Recommendations" or "Relations" ? input.WorkType : "CatalogueSync";
+        schedule.WorkType = input.WorkType is "Recommendations" or "Relations" or "TopUpcoming" ? input.WorkType : "CatalogueSync";
         schedule.ProcessOneSeasonAtATime = input.ProcessOneSeasonAtATime;
-        if (schedule.WorkType is "Recommendations" or "Relations") schedule.Source = "AniList";
+        if (schedule.WorkType is "Recommendations" or "Relations" or "TopUpcoming") schedule.Source = "AniList";
         schedule.Enabled = input.Enabled;
         schedule.StartAt = DateTime.SpecifyKind(input.StartAt, DateTimeKind.Utc);
         schedule.RecurrenceType = input.RecurrenceType is "Once" or "Daily" or "Weekly" or "Monthly" or "Yearly" ? input.RecurrenceType : "Daily";
@@ -103,22 +103,13 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
             if (schedule.EndType == "After" && schedule.QueuedOccurrences >= schedule.EndAfterOccurrences) continue;
             var next = ScheduleRecurrence.Next(schedule, schedule.LastQueuedAt ?? schedule.StartAt.AddTicks(-1), 1).FirstOrDefault();
             if (next == default || next > now) continue;
-            var jobType = schedule.WorkType switch { "Recommendations" => "Recommendations", "Relations" => "Relations", _ => schedule.Source };
+            var jobType = schedule.WorkType switch { "Recommendations" => "Recommendations", "Relations" => "Relations", "TopUpcoming" => "TopUpcoming", _ => schedule.Source };
             // Work remains serial per provider/work type so overlapping schedules do not duplicate it.
             if (await db.SyncJobs.AnyAsync(j => j.JobType == jobType && (j.Status == "Queued" || j.Status == "Running"), ct)) continue;
 
-            var years = YearsFor(schedule, now);
-            var seasons = SeasonsFor(schedule);
-            var parameters = schedule.ProcessOneSeasonAtATime
-                ? JsonSerializer.Serialize(new
-                {
-                    processOneSeasonAtATime = true,
-                    batchYears = years,
-                    batchSeasons = seasons,
-                    years = new[] { years[0] },
-                    seasons = new[] { seasons[0] }
-                })
-                : JsonSerializer.Serialize(new { years, seasons });
+            var parameters = schedule.WorkType == "TopUpcoming"
+                ? null
+                : CreateParameters(schedule, now);
             db.SyncJobs.Add(new SyncJob { JobType = jobType, QueuedAt = now, Parameters = parameters });
             schedule.LastQueuedAt = now;
             schedule.QueuedOccurrences++;
@@ -129,6 +120,22 @@ public class IntegrationScheduleService(AnimeDbContext db, SyncJobTrigger syncJo
             await db.SaveChangesAsync(ct);
             syncJobTrigger.Signal();
         }
+    }
+
+    private static string CreateParameters(IntegrationSchedule schedule, DateTime now)
+    {
+        var years = YearsFor(schedule, now);
+        var seasons = SeasonsFor(schedule);
+        return schedule.ProcessOneSeasonAtATime
+                ? JsonSerializer.Serialize(new
+                {
+                    processOneSeasonAtATime = true,
+                    batchYears = years,
+                    batchSeasons = seasons,
+                    years = new[] { years[0] },
+                    seasons = new[] { seasons[0] }
+                })
+                : JsonSerializer.Serialize(new { years, seasons });
     }
 
     public static int[] YearsFor(IntegrationSchedule schedule, DateTime now)
