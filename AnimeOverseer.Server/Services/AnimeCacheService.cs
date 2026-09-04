@@ -16,6 +16,7 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
     private const string ThemeNamesCacheKey = "catalogue:theme-names";
     private const string DemographicNamesCacheKey = "catalogue:demographic-names";
     private const string TopUpcomingIdsSettingKey = "catalogue:top-upcoming-anilist-ids";
+    private const string QuickFilterIdsSettingKeyPrefix = "catalogue:quick-filter-anilist-ids:";
     private const int TopUpcomingLimit = 1_000;
 
     // Catalogue cards need tags for local NSFW/library filtering, but never title
@@ -113,25 +114,47 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
         return syncedIds.Distinct().ToList();
     }
 
-    public async Task FetchAndCacheCurrentlyAiringAsync(Func<int, int, Task>? onPageFetched = null, CancellationToken ct = default)
+    public async Task<List<int>> FetchAndCacheCurrentlyAiringAsync(Func<string, int, Task>? onRankingCached = null, CancellationToken ct = default)
     {
-        var airing = await aniList.GetCurrentAsync(false, onPageFetched, ct);
+        var syncedIds = new List<int>();
+        var airing = await aniList.GetCurrentAsync(false, ct: ct);
         var upcoming = await aniList.GetCurrentAsync(true, ct: ct, maximumItems: TopUpcomingLimit);
         foreach (var group in airing.Concat(upcoming).GroupBy(a => (Year: a.StartDate?.Year ?? DateTime.UtcNow.Year, Season: SeasonName(a.StartDate))))
         {
             var season = await GetOrCreateSeasonAsync(group.Key.Season, group.Key.Year, ct);
-            await UpsertAsync(group.ToList(), season.Id, ct: ct);
+            syncedIds.AddRange(await UpsertAsync(group.ToList(), season.Id, ct: ct));
         }
 
-        // AniList returns this endpoint ordered by popularity. Persist provider IDs,
-        // rather than deriving a substitute order from our catalogue fields.
-        var orderedIds = upcoming.Where(anime => anime.AniListId is > 0).Select(anime => anime.AniListId!.Value).Distinct().ToArray();
-        var setting = await db.AppSettings.FirstOrDefaultAsync(item => item.Key == TopUpcomingIdsSettingKey, ct);
-        if (setting is null)
-            db.AppSettings.Add(new AppSetting { Key = TopUpcomingIdsSettingKey, Value = JsonSerializer.Serialize(orderedIds) });
-        else
-            setting.Value = JsonSerializer.Serialize(orderedIds);
-        await db.SaveChangesAsync(ct);
+        await SaveRankedIdsAsync("top-upcoming", upcoming, ct);
+        await SaveRankedIdsAsync("top-airing", airing, ct);
+        if (onRankingCached is not null)
+        {
+            await onRankingCached("Top Airing", airing.Count);
+            await onRankingCached("Top Upcoming", upcoming.Count);
+        }
+
+        var rankings = new[]
+        {
+            (Preset: "top-tv", Format: "TV", Sort: "POPULARITY_DESC"),
+            (Preset: "top-movies", Format: "MOVIE", Sort: "POPULARITY_DESC"),
+            (Preset: "top-ovas", Format: "OVA", Sort: "POPULARITY_DESC"),
+            (Preset: "top-onas", Format: "ONA", Sort: "POPULARITY_DESC"),
+            (Preset: "top-specials", Format: "SPECIAL", Sort: "POPULARITY_DESC"),
+            (Preset: "most-popular", Format: (string?)null, Sort: "POPULARITY_DESC"),
+            (Preset: "most-favorited", Format: (string?)null, Sort: "FAVOURITES_DESC")
+        };
+        foreach (var ranking in rankings)
+        {
+            var animes = await aniList.GetTopAnimeAsync(ranking.Format, sort: ranking.Sort, ct: ct, maximumItems: TopUpcomingLimit);
+            foreach (var group in animes.GroupBy(anime => (Year: anime.StartDate?.Year ?? DateTime.UtcNow.Year, Season: SeasonName(anime.StartDate))))
+            {
+                var season = await GetOrCreateSeasonAsync(group.Key.Season, group.Key.Year, ct);
+                syncedIds.AddRange(await UpsertAsync(group.ToList(), season.Id, ct: ct));
+            }
+            await SaveRankedIdsAsync(ranking.Preset, animes, ct);
+            if (onRankingCached is not null) await onRankingCached(QuickFilterLabel(ranking.Preset), animes.Count);
+        }
+        return syncedIds.Distinct().ToList();
     }
 
     public async Task<List<Anime>> GetTopUpcomingAsync(int skip, int take)
@@ -146,9 +169,59 @@ public class AnimeCacheService(AnimeDbContext db, AniListApiService aniList, Jik
 
     public async Task<int> GetTopUpcomingCountAsync() => (await GetTopUpcomingIdsAsync()).Count;
 
+    public Task<List<Anime>> GetQuickFilterAsync(string preset, int skip, int take) => GetRankedAnimeAsync(preset, skip, take);
+    public async Task<int> GetQuickFilterCountAsync(string preset) => (await GetRankedIdsAsync(preset)).Count;
+
+    public async Task<List<QuickFilterRanking>> GetQuickFilterRankingsAsync(int animeId)
+    {
+        var aniListId = await db.Animes.AsNoTracking().Where(anime => anime.Id == animeId).Select(anime => anime.AniListId).FirstOrDefaultAsync();
+        if (aniListId is not > 0) return [];
+        var presets = new[] { "top-airing", "top-upcoming", "top-tv", "top-movies", "top-ovas", "top-onas", "top-specials", "most-popular", "most-favorited" };
+        var rankings = new List<QuickFilterRanking>();
+        foreach (var preset in presets)
+        {
+            var rank = (await GetRankedIdsAsync(preset)).IndexOf(aniListId.Value);
+            if (rank >= 0) rankings.Add(new QuickFilterRanking(preset, QuickFilterLabel(preset), rank + 1));
+        }
+        return rankings;
+    }
+
+    private static string QuickFilterLabel(string preset) => preset switch
+    {
+        "top-airing" => "Top Airing", "top-upcoming" => "Top Upcoming", "top-tv" => "Top TV Series",
+        "top-movies" => "Top Movies", "top-ovas" => "Top OVAs", "top-onas" => "Top ONAs",
+        "top-specials" => "Top Specials", "most-popular" => "Most Popular", "most-favorited" => "Most Favorited", _ => preset
+    };
+
+    private async Task SaveRankedIdsAsync(string preset, IEnumerable<Anime> animes, CancellationToken ct)
+    {
+        var key = preset == "top-upcoming" ? TopUpcomingIdsSettingKey : QuickFilterIdsSettingKeyPrefix + preset;
+        var orderedIds = animes.Where(anime => anime.AniListId is > 0).Select(anime => anime.AniListId!.Value).Distinct().ToArray();
+        var setting = await db.AppSettings.FirstOrDefaultAsync(item => item.Key == key, ct);
+        if (setting is null) db.AppSettings.Add(new AppSetting { Key = key, Value = JsonSerializer.Serialize(orderedIds) });
+        else setting.Value = JsonSerializer.Serialize(orderedIds);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<List<Anime>> GetRankedAnimeAsync(string preset, int skip, int take)
+    {
+        var ids = await GetRankedIdsAsync(preset);
+        var pageIds = ids.Skip(skip).Take(take).ToArray();
+        if (pageIds.Length == 0) return [];
+        var animes = await CardQuery().Where(anime => anime.AniListId != null && pageIds.Contains(anime.AniListId.Value)).ToListAsync();
+        var order = pageIds.Select((id, index) => new { id, index }).ToDictionary(item => item.id, item => item.index);
+        return animes.OrderBy(anime => order[anime.AniListId!.Value]).ToList();
+    }
+
     private async Task<List<int>> GetTopUpcomingIdsAsync()
     {
-        var value = await db.AppSettings.AsNoTracking().Where(item => item.Key == TopUpcomingIdsSettingKey).Select(item => item.Value).FirstOrDefaultAsync();
+        return await GetRankedIdsAsync("top-upcoming");
+    }
+
+    private async Task<List<int>> GetRankedIdsAsync(string preset)
+    {
+        var key = preset == "top-upcoming" ? TopUpcomingIdsSettingKey : QuickFilterIdsSettingKeyPrefix + preset;
+        var value = await db.AppSettings.AsNoTracking().Where(item => item.Key == key).Select(item => item.Value).FirstOrDefaultAsync();
         if (string.IsNullOrWhiteSpace(value)) return [];
         try { return JsonSerializer.Deserialize<List<int>>(value) ?? []; }
         catch (JsonException) { return []; }

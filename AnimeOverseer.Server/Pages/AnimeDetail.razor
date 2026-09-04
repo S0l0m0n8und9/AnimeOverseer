@@ -234,6 +234,16 @@
                             </button>
                         </div>
                     </div>
+
+                    @if (_quickFilterRankings.Count > 0)
+                    {
+                        <div class="genre-badges" aria-label="Quick-filter rankings">
+                            @foreach (var ranking in _quickFilterRankings)
+                            {
+                                <a class="badge badge-type" href="/?preset=@ranking.Preset" title="View @ranking.Label">@ranking.Label #@ranking.Rank</a>
+                            }
+                        </div>
+                    }
                     @if (!string.IsNullOrEmpty(_posterMessage))
                     {
                         <p class="artwork-gallery-message">@_posterMessage</p>
@@ -376,6 +386,7 @@
     private string? _posterMessage;
     private bool _isPreviewExpanded;
     private string _customEnglishTitle = string.Empty;
+    private List<QuickFilterRanking> _quickFilterRankings = [];
 
     private List<AnimeRelation> Recommendations => anime?.Relations ?? [];
     private static readonly string[] RelationOrder = ["Prequel", "Sequel", "Parent Story", "Side Story", "Alternative Version", "Summary", "Full Story", "Character", "Other", "Adaptation"];
@@ -429,6 +440,7 @@
                 _selectedImageId = anime.PreferredImageId;
                 _inLibrary = MediaLibraryService.IsInSonarr(anime)
                           || MediaLibraryService.IsInRadarr(anime);
+                _quickFilterRankings = await AnimeDataSource.GetQuickFilterRankingsAsync(anime.Id);
             }
         }
         catch (Exception ex)
@@ -477,6 +489,7 @@
             if (anime != null)
             {
                 _selectedImageId = anime.PreferredImageId;
+                _quickFilterRankings = await AnimeDataSource.GetQuickFilterRankingsAsync(anime.Id);
                 _ = LoadRecommendationsAsync(anime.Id);
                 _ = LoadRelatedAnimeAsync(anime.Id);
             }

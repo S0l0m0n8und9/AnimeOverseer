@@ -112,7 +112,7 @@
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
                     <label>Schedule name<input class="form-input" style="display:block" @bind="schedule.Name" /></label>
                     <label>Source<select class="form-input" style="display:block" @bind="schedule.Source" @bind:after="() => NormalizeScheduleWorkType(schedule)">@foreach (var source in IntegrationScheduleService.CatalogueSources) { <option value="@source">@source</option> }</select></label>
-                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option>@if (schedule.Source == "AniList") { <option value="TopUpcoming">Refresh top upcoming</option><option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
+                    <label>Work type<select class="form-input" style="display:block" @bind="schedule.WorkType" @bind:after="() => NormalizeScheduleSource(schedule)"><option value="CatalogueSync">Catalogue sync</option>@if (schedule.Source == "AniList") { <option value="TopUpcoming">Refresh quick-filter rankings</option><option value="Recommendations">Retrieve recommendations</option><option value="Relations">Retrieve related anime</option> }</select></label>
                     <label style="display:flex;gap:.35rem;align-items:center;height:38px"><input type="checkbox" @bind="schedule.Enabled" /> Enabled</label>
                 </div>
                 <div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
@@ -137,7 +137,7 @@
                     @if (schedule.ProcessOneSeasonAtATime) { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Runs one selected season at a time and automatically queues the next one until the configured range is complete.</p> }
                     @if (schedule.WorkType == "Recommendations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves AniList recommendations for stored AniList anime in the selected years and seasons, then saves the recommendation links.</p> }
                     @if (schedule.WorkType == "Relations") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Retrieves franchise relationships from AniList and Jikan for stored anime in the selected years and seasons, then saves the local related-anime links.</p> }
-                    @if (schedule.WorkType == "TopUpcoming") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Fetches AniList’s popularity-ranked upcoming anime and refreshes the cached list used by the Top Upcoming quick filter.</p> }
+                    @if (schedule.WorkType == "TopUpcoming") { <p style="color:#aaa;font-size:.85em;margin:.3rem 0">Fetches AniList’s ranked lists for Top Airing, Top Upcoming, each format, Most Popular, and Most Favorited.</p> }
                     @if (schedule.WorkType != "TopUpcoming")
                     {
                     <div style="display:flex;gap:.7rem;align-items:end;flex-wrap:wrap;margin-top:.45rem">

@@ -33,6 +33,8 @@ public class SyncJob
     public string? SyncedAnimeIds { get; set; }
 }
 
+public record QuickFilterRanking(string Preset, string Label, int Rank);
+
 /// <summary>Persisted catalogue source automation. One record represents one source's cadence.</summary>
 public class IntegrationSchedule
 {

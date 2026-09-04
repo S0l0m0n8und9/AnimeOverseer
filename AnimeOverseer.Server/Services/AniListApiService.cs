@@ -59,6 +59,22 @@ public class AniListApiService(HttpClient httpClient, ILogger<AniListApiService>
         return result;
     }
 
+    /// <summary>Returns AniList's ranking for a catalogue slice without substituting a local sort.</summary>
+    public async Task<List<Anime>> GetTopAnimeAsync(string? format = null, string? status = null, string sort = "POPULARITY_DESC", CancellationToken ct = default, int maximumItems = 1_000)
+    {
+        var result = new List<Anime>();
+        for (var page = 1; result.Count < maximumItems; page++)
+        {
+            var data = await QueryAsync(@"query ($page: Int!, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort!]) {
+                Page(page: $page, perPage: 50) { pageInfo { hasNextPage } media(type: ANIME, format: $format, status: $status, sort: $sort) { " + MediaFields + " } } }",
+                new { page, format, status, sort = new[] { sort } }, ct);
+            var pageData = data.GetProperty("Page");
+            result.AddRange(pageData.GetProperty("media").EnumerateArray().Select(MapFromAniList));
+            if (!pageData.GetProperty("pageInfo").GetProperty("hasNextPage").GetBoolean()) break;
+        }
+        return result.Take(maximumItems).ToList();
+    }
+
     public async Task<List<Anime>> SearchAsync(string search, CancellationToken ct = default)
     {
         var data = await QueryAsync("query ($search: String!) { Page(perPage: 25) { media(type: ANIME, search: $search) { " + MediaFields + " } } }", new { search }, ct);

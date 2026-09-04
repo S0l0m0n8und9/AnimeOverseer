@@ -24,5 +24,8 @@ namespace AnimeOverseer.Server.Services
         Task<int> GetMostFavoritedCountAsync();
         Task<List<Anime>> GetTopUpcomingAsync(int skip, int take);
         Task<int> GetTopUpcomingCountAsync();
+        Task<List<Anime>> GetQuickFilterAsync(string preset, int skip, int take);
+        Task<int> GetQuickFilterCountAsync(string preset);
+        Task<List<QuickFilterRanking>> GetQuickFilterRankingsAsync(int animeId);
     }
 }

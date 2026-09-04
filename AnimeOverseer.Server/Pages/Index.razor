@@ -139,7 +139,7 @@
     private bool _ownNavigation = false;
     private bool hideInLibrary;
     private bool showNsfw;
-    private bool topUpcoming;
+    private string? quickFilterPreset;
     private List<string> nsfwGenres = [];
     private List<string> nsfwThemes = [];
 
@@ -205,7 +205,7 @@
         searchQuery = qs.GetValueOrDefault("q", string.Empty);
         hideInLibrary = qs.TryGetValue("hideInLibrary", out var hide) && hide == "1";
         showNsfw = qs.TryGetValue("showNsfw", out var show) && show == "1";
-        topUpcoming = qs.TryGetValue("preset", out var preset) && preset == "top-upcoming";
+        quickFilterPreset = qs.GetValueOrDefault("preset") is { } preset && IsQuickFilterPreset(preset) ? preset : null;
         filterState = qs.TryGetValue("filters", out var f)
             ? DeserializeFilters(f) ?? new FilterState()
             : new FilterState();
@@ -219,8 +219,8 @@
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
             await LoadSearch();
-        else if (topUpcoming)
-            await LoadTopUpcoming();
+        else if (quickFilterPreset is not null)
+            await LoadQuickFilter();
         else if (filterState.IsActive)
             await LoadFiltered();
         else
@@ -244,8 +244,8 @@
             parts.Add("hideInLibrary=1");
         if (showNsfw)
             parts.Add("showNsfw=1");
-        if (topUpcoming)
-            parts.Add("preset=top-upcoming");
+        if (quickFilterPreset is not null)
+            parts.Add($"preset={quickFilterPreset}");
         if (filterState.IsActive)
             parts.Add($"filters={Uri.EscapeDataString(SerializeFilters(filterState))}");
         if (sortState.IsActive)
@@ -429,12 +429,46 @@
         }
     }
 
+    private async Task LoadQuickFilter(bool append = false)
+    {
+        if (quickFilterPreset == "top-upcoming")
+        {
+            await LoadTopUpcoming(append);
+            return;
+        }
+
+        if (append) isLoadingMore = true;
+        else isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var skip = append ? allAnimes.Count : 0;
+            var items = await AnimeDataSource.GetQuickFilterAsync(quickFilterPreset!, skip, pageSize + 1);
+            hasMore = items.Count > pageSize;
+            if (hasMore) items.RemoveAt(pageSize);
+            totalCount = await AnimeDataSource.GetQuickFilterCountAsync(quickFilterPreset!);
+            if (append) allAnimes.AddRange(items);
+            else allAnimes = items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading {quickFilterPreset} anime: {ex.Message}");
+            if (!append) allAnimes = new();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingMore = false;
+            StateHasChanged();
+        }
+    }
+
     // ── User actions ─────────────────────────────────────────
 
     private async Task LoadMore()
     {
-        if (topUpcoming && string.IsNullOrWhiteSpace(searchQuery))
-            await LoadTopUpcoming(append: true);
+        if (quickFilterPreset is not null && string.IsNullOrWhiteSpace(searchQuery))
+            await LoadQuickFilter(append: true);
         else if (filterState.IsActive && string.IsNullOrWhiteSpace(searchQuery))
             await LoadFiltered(append: true);
         else
@@ -448,8 +482,8 @@
         allAnimes  = new();
         totalCount = 0;
         PushUrl(replace: true);
-        if (topUpcoming)
-            await LoadTopUpcoming();
+        if (quickFilterPreset is not null)
+            await LoadQuickFilter();
         else if (filterState.IsActive)
             await LoadFiltered();
         else
@@ -458,7 +492,7 @@
 
     private async Task OnFilterChanged()
     {
-        topUpcoming = false;
+        quickFilterPreset = null;
         allAnimes  = new();
         totalCount = 0;
         PushUrl(replace: true);
@@ -501,7 +535,7 @@
     // ── Preset Filter Handlers ──────────────────────────────────────
     private async Task SetPresetAllAnime()
     {
-        topUpcoming = false;
+        quickFilterPreset = null;
         filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
@@ -513,185 +547,110 @@
 
     private async Task SetPresetTopAiring()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Status,
-                    Operator = FilterOperator.Equals,
-                    Value = "Currently Airing"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-airing";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopUpcoming()
     {
-        topUpcoming = true;
+        quickFilterPreset = "top-upcoming";
         filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadTopUpcoming();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopTVSeries()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Type,
-                    Operator = FilterOperator.Equals,
-                    Value = "TV"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-tv";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopMovies()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Type,
-                    Operator = FilterOperator.Equals,
-                    Value = "Movie"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-movies";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopOVAs()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Type,
-                    Operator = FilterOperator.Equals,
-                    Value = "OVA"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-ovas";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopONAs()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Type,
-                    Operator = FilterOperator.Equals,
-                    Value = "ONA"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-onas";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetTopSpecials()
     {
-        topUpcoming = false;
-        filterState = new FilterState
-        {
-            Groups = [new FilterGroup
-            {
-                Conditions = [new FilterCondition
-                {
-                    Field = FilterField.Type,
-                    Operator = FilterOperator.Equals,
-                    Value = "Special"
-                }]
-            }]
-        };
+        quickFilterPreset = "top-specials";
+        filterState = new FilterState();
         sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadFiltered();
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetMostPopular()
     {
-        topUpcoming = false;
+        quickFilterPreset = "most-popular";
         filterState = new FilterState();
-        sortState = new SortState
-        {
-            Criteria = [new SortCriterion
-            {
-                Field = SortField.Rating,
-                Direction = SortDirection.Descending
-            }]
-        };
+        sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadRecent(); // LoadRecent respects sortState
+        else await LoadQuickFilter();
     }
 
     private async Task SetPresetMostFavorited()
     {
-        topUpcoming = false;
-        // For Most Favorited, we'll load anime sorted by request count
-        // This requires a special query since we don't have built-in sorting by Requests count
+        quickFilterPreset = "most-favorited";
         filterState = new FilterState();
-        sortState = new SortState(); // Clear sort since we're using custom loading
+        sortState = new SortState();
         allAnimes = new();
         totalCount = 0;
         PushUrl(replace: true);
         if (!string.IsNullOrWhiteSpace(searchQuery)) await LoadSearch();
-        else await LoadMostFavorited();
+        else await LoadQuickFilter();
     }
 
     // ── Serialisation ────────────────────────────────────────
@@ -748,6 +707,10 @@
         }
         catch { return null; }
     }
+
+    private static bool IsQuickFilterPreset(string preset) => preset is
+        "top-airing" or "top-upcoming" or "top-tv" or "top-movies" or
+        "top-ovas" or "top-onas" or "top-specials" or "most-popular" or "most-favorited";
 
     private static object SerializeGroup(FilterGroup group) => new
     {

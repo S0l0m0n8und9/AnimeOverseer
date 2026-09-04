@@ -103,7 +103,7 @@
             {
                 <details style="margin-top:1.25rem;border:1px solid #333;border-radius:5px;background:#1a1a1a">
                     <summary style="padding:.65rem .8rem;cursor:pointer;color:#ddd;font-size:.9em">
-                        Synced anime (@_syncedAnimes.Count.ToString("N0"))
+                        @(_job.JobType == "TopUpcoming" ? "Updated anime" : "Synced anime") (@_syncedAnimes.Count.ToString("N0"))
                     </summary>
                     <div class="synced-anime-grid">
                         @foreach (var anime in _syncedAnimes)

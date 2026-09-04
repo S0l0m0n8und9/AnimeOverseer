@@ -10,13 +10,21 @@ public class SyncService(AnimeDbContext db, IServiceScopeFactory scopeFactory, A
 {
     public async Task RunTopUpcomingSyncAsync(SyncJob job, CancellationToken ct)
     {
-        Log(job, "AniList top-upcoming refresh started");
+        job.TotalCount = 9;
+        job.ProcessedCount = 0;
+        Log(job, "AniList quick-filter rankings refresh started — 9 ranked lists to refresh");
+        await db.SaveChangesAsync(ct);
         using var scope = scopeFactory.CreateScope();
         var cache = scope.ServiceProvider.GetRequiredService<AnimeCacheService>();
-        await cache.FetchAndCacheCurrentlyAiringAsync(ct: ct);
-        job.ProcessedCount = await cache.GetTopUpcomingCountAsync();
-        job.TotalCount = job.ProcessedCount;
-        Log(job, $"AniList top-upcoming refresh complete — {job.ProcessedCount:N0} ranked anime cached", "Success");
+        var syncedIds = await cache.FetchAndCacheCurrentlyAiringAsync(async (label, count) =>
+        {
+            job.ProcessedCount++;
+            job.Message = $"Refreshed {label} ({count:N0} anime) — {job.ProcessedCount} of {job.TotalCount} lists";
+            Log(job, job.Message, "Success");
+            await db.SaveChangesAsync(ct);
+        }, ct);
+        job.SyncedAnimeIds = JsonSerializer.Serialize(syncedIds);
+        Log(job, $"AniList quick-filter rankings refresh complete — {syncedIds.Count:N0} anime updated", "Success");
     }
 
     public async Task RunJikanSyncAsync(SyncJob job, CancellationToken ct)
