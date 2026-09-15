@@ -6,6 +6,7 @@
 @inject CollectionService CollectionService
 @inject IAnimeDataSource AnimeDataSource
 @inject NavigationManager Navigation
+@inject SettingsService SettingsService
 
 <PageTitle>Collections - AnimeOverseer</PageTitle>
 
@@ -13,6 +14,11 @@
     <aside class="collections-sidebar">
         <div class="collections-sidebar-heading"><h1>Collections</h1><button class="btn btn-primary" @onclick="NewCollection">+ New</button></div>
         <p class="collections-help">Curate a list yourself, or save filters that update automatically as your catalogue grows.</p>
+        <label class="collection-page-size">Default anime per page
+            <select @bind="defaultPageSize" @bind:after="SaveDefaultPageSizeAsync" disabled="@isLoading">
+                @foreach (var size in CollectionPagingSettings.PageSizes) { <option value="@size">@size</option> }
+            </select>
+        </label>
         @foreach (var item in collections)
         {
             <button class="collection-list-item @(selected?.Id == item.Id ? "selected" : "")" @onclick="() => SelectCollectionAsync(item.Id)">
@@ -76,9 +82,25 @@
             {
                 <p class="collection-filter-summary">This collection updates whenever anime match its saved filters.</p>
             }
-            <p class="results-info">@collectionAnime.Count anime@(collectionAnime.Count == 1 ? "" : "s")</p>
+            <div class="collection-paging">
+                <p class="results-info" aria-live="polite">@totalAnime anime: @(totalAnime == 0 ? 0 : (currentPage - 1) * EffectivePageSize + 1) to @Math.Min(currentPage * EffectivePageSize, totalAnime) shown</p>
+                <label class="collection-page-size">Anime per page
+                    <select @bind="pageSizeOverride" @bind:after="SavePageSizeOverrideAsync">
+                        <option value="">Use default (@defaultPageSize)</option>
+                        @foreach (var size in CollectionPagingSettings.PageSizes) { <option value="@size">@size</option> }
+                    </select>
+                </label>
+            </div>
             @if (collectionAnime.Count == 0) { <div class="empty-state"><span class="empty-icon">&#x1F4C1;</span><h3>No anime here yet</h3><p>@(selected.Type == CollectionType.Manual ? "Search above to start building this collection." : "Adjust the saved filters to find matching anime.")</p></div> }
             else { <div class="anime-grid">@foreach (var anime in collectionAnime) { <div class="collection-anime"><AnimeCard Anime="anime" />@if (selected.Type == CollectionType.Manual) { <button class="collection-remove" @onclick="() => RemoveAnimeAsync(anime.Id)">Remove</button> }</div> }</div> }
+            @if (totalAnime > 0)
+            {
+                <nav class="collection-paging" aria-label="Collection pages">
+                    <button class="btn" disabled="@(currentPage <= 1)" @onclick="() => GoToPageAsync(currentPage - 1)">Previous</button>
+                    <span aria-live="polite">Page @currentPage of @PageCount</span>
+                    <button class="btn" disabled="@(currentPage >= PageCount)" @onclick="() => GoToPageAsync(currentPage + 1)">Next</button>
+                </nav>
+            }
         }
         else
         {
@@ -94,6 +116,11 @@
     private List<Anime> collectionAnime = [], searchResults = [], manualCandidates = [];
     private List<string> genres = [], themes = [], demographics = [];
     private bool isLoading, editing;
+    private int defaultPageSize = CollectionPagingSettings.DefaultPageSize;
+    private int? pageSizeOverride;
+    private int currentPage = 1, totalAnime;
+    private int EffectivePageSize => pageSizeOverride ?? defaultPageSize;
+    private int PageCount => Math.Max(1, (int)Math.Ceiling(totalAnime / (double)EffectivePageSize));
     private string editName = string.Empty, editDescription = string.Empty, animeQuery = string.Empty;
     private CollectionType editType = CollectionType.Manual;
     private FilterState editFilters = new();
@@ -103,6 +130,7 @@
     {
         isLoading = true;
         var genreTask = AnimeDataSource.GetGenreNamesAsync(); var themeTask = AnimeDataSource.GetThemeNamesAsync(); var demographicTask = AnimeDataSource.GetDemographicNamesAsync();
+        defaultPageSize = CollectionPagingSettings.Read(await SettingsService.GetAsync(CollectionPagingSettings.DefaultKey)) ?? CollectionPagingSettings.DefaultPageSize;
         collections = await CollectionService.GetAllAsync();
         await Task.WhenAll(genreTask, themeTask, demographicTask);
         genres = genreTask.Result; themes = themeTask.Result; demographics = demographicTask.Result;
@@ -112,7 +140,37 @@
 
     protected override async Task OnParametersSetAsync() { if (CollectionId is int id && selected?.Id != id) await LoadSelectedAsync(id); }
     private async Task SelectCollectionAsync(int id) => Navigation.NavigateTo($"/collections/{id}");
-    private async Task LoadSelectedAsync(int id) { selected = await CollectionService.GetAsync(id); collectionAnime = selected is null ? [] : await CollectionService.GetAnimeAsync(selected); searchResults = []; animeQuery = string.Empty; manualFilters = new(); manualCandidates = selected?.Type == CollectionType.Manual ? await AnimeDataSource.GetFilteredAsync(manualFilters, 0, 200) : []; }
+    private async Task LoadSelectedAsync(int id)
+    {
+        if (selected?.Id != id) { currentPage = 1; editing = false; }
+        selected = await CollectionService.GetAsync(id);
+        pageSizeOverride = CollectionPagingSettings.Read(await SettingsService.GetAsync(CollectionPagingSettings.OverrideKey(id)));
+        await LoadPageAsync();
+        searchResults = []; animeQuery = string.Empty; manualFilters = new();
+        manualCandidates = selected?.Type == CollectionType.Manual ? await AnimeDataSource.GetFilteredAsync(manualFilters, 0, 200) : [];
+    }
+
+    private async Task LoadPageAsync()
+    {
+        if (selected is null) { collectionAnime = []; totalAnime = 0; currentPage = 1; return; }
+        (collectionAnime, totalAnime, currentPage) = await CollectionService.GetAnimePageAsync(selected, currentPage, EffectivePageSize);
+    }
+
+    private async Task GoToPageAsync(int page) { currentPage = Math.Clamp(page, 1, PageCount); await LoadPageAsync(); }
+
+    private async Task SaveDefaultPageSizeAsync()
+    {
+        await SettingsService.SetAsync(CollectionPagingSettings.DefaultKey, defaultPageSize.ToString());
+        if (pageSizeOverride is null) { currentPage = 1; await LoadPageAsync(); }
+    }
+
+    private async Task SavePageSizeOverrideAsync()
+    {
+        if (selected is null) return;
+        await SettingsService.SetAsync(CollectionPagingSettings.OverrideKey(selected.Id), pageSizeOverride?.ToString());
+        currentPage = 1;
+        await LoadPageAsync();
+    }
     private void NewCollection() { selected = null; editing = true; editName = editDescription = string.Empty; editType = CollectionType.Manual; editFilters = new(); }
     private void EditSelected() { if (selected is null) return; editing = true; editName = selected.Name; editDescription = selected.Description ?? string.Empty; editType = selected.Type; editFilters = CollectionService.Deserialize(selected.FilterJson); }
     private void CancelEdit() { editing = false; if (selected is null) Navigation.NavigateTo("/collections"); }
@@ -120,7 +178,7 @@
     private async Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(editName)) return;
-        if (selected is null) { var created = await CollectionService.CreateAsync(editName, editDescription, editType, editFilters); Navigation.NavigateTo($"/collections/{created.Id}"); }
+        if (selected is null) { var created = await CollectionService.CreateAsync(editName, editDescription, editType, editFilters); editing = false; collections = await CollectionService.GetAllAsync(); Navigation.NavigateTo($"/collections/{created.Id}"); }
         else { await CollectionService.UpdateAsync(selected.Id, editName, editDescription, editType, editFilters); editing = false; await RefreshSelectedAsync(); }
     }
     private async Task RefreshSelectedAsync() { collections = await CollectionService.GetAllAsync(); if (selected is not null) await LoadSelectedAsync(selected.Id); }

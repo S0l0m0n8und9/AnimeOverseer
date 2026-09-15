@@ -18,8 +18,7 @@ public class CollectionService(AnimeDbContext db)
         .OrderBy(collection => collection.Name).ToListAsync();
 
     public Task<AnimeCollection?> GetAsync(int id) => db.AnimeCollections.AsNoTracking()
-        .Include(collection => collection.Items).ThenInclude(item => item.Anime).ThenInclude(anime => anime.Images)
-        .Include(collection => collection.Items).ThenInclude(item => item.Anime).ThenInclude(anime => anime.Season)
+        .Include(collection => collection.Items)
         .FirstOrDefaultAsync(collection => collection.Id == id);
 
     public async Task<AnimeCollection> CreateAsync(string name, string? description, CollectionType type, FilterState? filters)
@@ -61,6 +60,33 @@ public class CollectionService(AnimeDbContext db)
                 .OrderByDescending(anime => anime.StartDate).ToList();
         }
         return await FilterQueryBuilder.Apply(Animes(), CollectionFilterExpressionResolver.Resolve(savedFilters)).OrderByDescending(anime => anime.StartDate).ToListAsync();
+    }
+
+    public async Task<(List<Anime> Items, int TotalCount, int Page)> GetAnimePageAsync(
+        AnimeCollection collection, int page, int pageSize)
+    {
+        if (!CollectionPagingSettings.PageSizes.Contains(pageSize))
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+
+        var filters = Deserialize(collection.FilterJson);
+        // Expressions referencing each anime must be evaluated before counting and paging.
+        if (collection.Type == CollectionType.Automatic && CollectionFilterExpressionResolver.RequiresAnimeContext(filters))
+        {
+            var matches = await GetAnimeAsync(collection);
+            page = Math.Clamp(page, 1, Math.Max(1, (int)Math.Ceiling(matches.Count / (double)pageSize)));
+            return (matches.OrderByDescending(a => a.StartDate).ThenBy(a => a.Id)
+                .Skip((page - 1) * pageSize).Take(pageSize).ToList(), matches.Count, page);
+        }
+
+        var query = collection.Type == CollectionType.Manual
+            ? Animes().Where(anime => db.AnimeCollectionItems.Any(item => item.CollectionId == collection.Id && item.AnimeId == anime.Id))
+            : FilterQueryBuilder.Apply(Animes(), CollectionFilterExpressionResolver.Resolve(filters));
+        var total = await query.CountAsync();
+        page = Math.Clamp(page, 1, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var ordered = collection.Type == CollectionType.Manual
+            ? query.OrderBy(a => a.Title).ThenBy(a => a.Id)
+            : query.OrderByDescending(a => a.StartDate).ThenBy(a => a.Id);
+        return (await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(), total, page);
     }
 
     public async Task<bool> AddAnimeAsync(int collectionId, int animeId)
