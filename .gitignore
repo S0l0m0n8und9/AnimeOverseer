@@ -10,7 +10,7 @@
 /AnimeOverseer.Server/animeoverseer.db
 /AnimeOverseer.Server/animeoverseer.db-shm
 /AnimeOverseer.Server/animeoverseer.db-wal
-/AnimeOverseer.Server/animeoverseer (2).zip
+/AnimeOverseer.Server/*.zip
 /AnimeOverseer.Server/bin/Release/net10.0
 /AnimeOverseer.Server/animeoverseer.before-lock-fix.db
 /AnimeOverseer.Server.Tests/bin/Debug/net10.0
