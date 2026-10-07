@@ -36,7 +36,9 @@ ARG UID=10001
 WORKDIR /app
 USER root
 COPY --from=publish /app/publish .
+COPY LICENSE /licenses/AnimeOverseer-LICENSE
 RUN mkdir -p /app/data /app/wwwroot/images/cache \
     && chown -R ${UID}:${UID} /app/data /app/wwwroot
 USER appuser
+LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
 ENTRYPOINT ["dotnet", "AnimeOverseer.Server.dll"]
